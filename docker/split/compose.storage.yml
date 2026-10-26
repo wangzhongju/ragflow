@@ -1,0 +1,164 @@
+name: ragflow-storage
+
+x-service: &service
+  restart: unless-stopped
+  logging:
+    driver: json-file
+    options:
+      max-size: "20m"
+      max-file: "5"
+
+services:
+  mysql:
+    <<: *service
+    image: ${MYSQL_IMAGE:?Set MYSQL_IMAGE}
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:?Set MYSQL_ROOT_PASSWORD}
+      MYSQL_DATABASE: rag_flow
+      MYSQL_USER: ragflow
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:?Set MYSQL_PASSWORD}
+      TZ: Asia/Shanghai
+    command:
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_unicode_ci
+      - --max-connections=300
+      - --max-allowed-packet=1073741824
+      - --innodb-buffer-pool-size=512M
+      - --binlog-expire-logs-seconds=604800
+    ports:
+      - "${STORAGE_IP:-192.168.88.92}:3306:3306"
+    volumes:
+      - mysql_data:/var/lib/mysql
+    mem_limit: 1536m
+    healthcheck:
+      test: [CMD-SHELL, 'MYSQL_PWD="$$MYSQL_PASSWORD" mysql -h 127.0.0.1 -u ragflow -D rag_flow -Nse "SELECT 1"']
+      interval: 15s
+      timeout: 5s
+      retries: 20
+      start_period: 60s
+
+  elasticsearch:
+    <<: *service
+    image: ${ES_IMAGE:?Set ES_IMAGE}
+    environment:
+      node.name: ragflow-es92
+      cluster.name: ragflow-split
+      discovery.type: single-node
+      xpack.security.enabled: "true"
+      xpack.security.http.ssl.enabled: "false"
+      xpack.security.transport.ssl.enabled: "false"
+      ELASTIC_PASSWORD: ${ELASTIC_PASSWORD:?Set ELASTIC_PASSWORD}
+      ES_JAVA_OPTS: -Xms1536m -Xmx1536m
+      path.repo: /snapshots
+    ports:
+      - "${STORAGE_IP:-192.168.88.92}:9200:9200"
+    volumes:
+      - es_data:/usr/share/elasticsearch/data
+      - es_snapshots:/snapshots
+    tmpfs:
+      - /tmp:mode=1777,size=512m
+    mem_limit: 3g
+    healthcheck:
+      test: [CMD-SHELL, 'curl -fsS -u "elastic:$$ELASTIC_PASSWORD" "http://localhost:9200/_cluster/health?wait_for_status=yellow&timeout=5s" >/dev/null']
+      interval: 15s
+      timeout: 10s
+      retries: 20
+      start_period: 60s
+
+  minio:
+    <<: *service
+    image: ${MINIO_IMAGE:?Set MINIO_IMAGE}
+    command: [server, /data, --console-address, ':9001']
+    environment:
+      MINIO_ROOT_USER: ${MINIO_USER:?Set MINIO_USER}
+      MINIO_ROOT_PASSWORD: ${MINIO_PASSWORD:?Set MINIO_PASSWORD}
+      MINIO_BROWSER_REDIRECT_URL: http://${STORAGE_IP:-192.168.88.92}:9001
+    ports:
+      - "${STORAGE_IP:-192.168.88.92}:9000:9000"
+      - "${STORAGE_IP:-192.168.88.92}:9001:9001"
+    volumes:
+      - minio_data:/data
+    mem_limit: 1g
+    healthcheck:
+      test: [CMD, curl, -fsS, 'http://localhost:9000/minio/health/ready']
+      interval: 15s
+      timeout: 5s
+      retries: 20
+
+  redis:
+    <<: *service
+    image: ${REDIS_IMAGE:?Set REDIS_IMAGE}
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD:?Set REDIS_PASSWORD}
+    command:
+      - /bin/sh
+      - -ec
+      - 'exec redis-server --requirepass "$$REDIS_PASSWORD" --appendonly yes --appendfsync everysec --maxmemory 512mb --maxmemory-policy noeviction'
+    ports:
+      - "${STORAGE_IP:-192.168.88.92}:6379:6379"
+    volumes:
+      - redis_data:/data
+    mem_limit: 768m
+    healthcheck:
+      test: [CMD-SHELL, 'REDISCLI_AUTH="$$REDIS_PASSWORD" redis-cli ping | grep -qx PONG']
+      interval: 15s
+      timeout: 5s
+      retries: 20
+
+  kibana:
+    <<: *service
+    image: ${KIBANA_IMAGE:?Set KIBANA_IMAGE}
+    environment:
+      SERVER_HOST: 0.0.0.0
+      SERVER_PUBLICBASEURL: http://${STORAGE_IP:-192.168.88.92}:5601
+      ELASTICSEARCH_HOSTS: http://elasticsearch:9200
+      ELASTICSEARCH_USERNAME: kibana_system
+      ELASTICSEARCH_PASSWORD: ${KIBANA_PASSWORD:?Set KIBANA_PASSWORD}
+      XPACK_SECURITY_ENCRYPTIONKEY: ${KIBANA_ENCRYPTION_KEY:?Set KIBANA_ENCRYPTION_KEY}
+      XPACK_ENCRYPTEDSAVEDOBJECTS_ENCRYPTIONKEY: ${KIBANA_ENCRYPTION_KEY}
+      XPACK_REPORTING_ENCRYPTIONKEY: ${KIBANA_ENCRYPTION_KEY}
+      TELEMETRY_ENABLED: "false"
+    ports:
+      - "${STORAGE_IP:-192.168.88.92}:5601:5601"
+    volumes:
+      - kibana_data:/usr/share/kibana/data
+    depends_on:
+      elasticsearch:
+        condition: service_healthy
+    mem_limit: 1g
+    healthcheck:
+      test: [CMD-SHELL, 'curl -fsS http://localhost:5601/api/status >/dev/null']
+      interval: 30s
+      timeout: 10s
+      retries: 20
+      start_period: 90s
+
+  redisinsight:
+    <<: *service
+    image: ${REDISINSIGHT_IMAGE:?Set REDISINSIGHT_IMAGE}
+    environment:
+      RI_ENCRYPTION_KEY: ${REDISINSIGHT_ENCRYPTION_KEY:?Set REDISINSIGHT_ENCRYPTION_KEY}
+      RI_REDIS_HOST: redis
+      RI_REDIS_PORT: "6379"
+      RI_REDIS_ALIAS: RAGFlow-92
+      RI_REDIS_USERNAME: default
+      RI_REDIS_PASSWORD: ${REDIS_PASSWORD}
+      RI_REDIS_DB: "1"
+    # Redis Insight has no application login; access through an SSH tunnel.
+    ports:
+      - "127.0.0.1:5540:5540"
+    volumes:
+      - redisinsight_data:/data
+    depends_on:
+      redis:
+        condition: service_healthy
+    mem_limit: 768m
+
+volumes:
+  mysql_data:
+  es_data:
+  es_snapshots:
+  minio_data:
+  redis_data:
+  kibana_data:
+  redisinsight_data:

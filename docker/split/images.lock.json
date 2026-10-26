@@ -1,0 +1,44 @@
+{
+  "recorded_on": "2026-10-23",
+  "platform": "linux/amd64",
+  "source_revision": "a024bea0cd93f39e6652a42bf84dd20c55bc560b",
+  "images": [
+    {
+      "image": "infiniflow/ragflow:v0.27.2",
+      "config_digest": "sha256:e0e1d9ec4af666710a35f3f7e1e3fe6b450b6a2cfe52851f107fc5f5967bbe8f",
+      "official_manifest_digest": "sha256:e6b3f1a185c0a70abb3a72e1092415df8c5c6a4fae0089545554f2936c4b27ab"
+    },
+    {
+      "image": "mysql:8.0.40",
+      "config_digest": "sha256:6c55ddbef96911f9f36d1330ffe3f7557c019d49434e738cafabd1a3dd6b4bac",
+      "official_manifest_digest": "sha256:d58ac93387f644e4e040c636b8f50494e78e5afc27ca0a87348b2f577da2b7ff"
+    },
+    {
+      "image": "redis:7.4",
+      "runtime_version": "7.4.11",
+      "config_digest": "sha256:e965140ddfcc015d5ad17b0d56f3d0195834a0bdcba3c490b253e45ce81138b0",
+      "official_manifest_digest": "sha256:44960b3100c48159a66d28c18b0588c193492e25f7551d60e51dd464fc3eca5b"
+    },
+    {
+      "image": "redis/redisinsight:3.8.0",
+      "config_digest": "sha256:3e9a2017a4d4dfc36bec418245a88180970f09785c08ce840117b3518a850c86",
+      "official_manifest_digest": "sha256:b5e19ee240abef6edb435871b90ff8a210995422e8e018ab61c0339d318a1f84"
+    },
+    {
+      "image": "minio/minio@sha256:14cea493d9a34af32f524e538b8346cf79f3321eff8e708c1e2960462bd8936e",
+      "runtime_version": "RELEASE.2025-09-07T16-13-09Z",
+      "config_digest": "sha256:69b2ec208575b69597784255eec6fa6a2985ee9e1a47f4411a51f7f5fdd193a9",
+      "official_manifest_digest": "sha256:14cea493d9a34af32f524e538b8346cf79f3321eff8e708c1e2960462bd8936e"
+    },
+    {
+      "image": "docker.elastic.co/elasticsearch/elasticsearch:8.11.3",
+      "config_digest": "sha256:792fab0c0bd881e19b2cac46d1d7b555d81f02d73d8c0ebab3fd511b5dc5d508",
+      "official_manifest_digest": "sha256:2892d2363c3c12c5ed54c64faf89e3a19d633d8dd0d190d0bffe03035ff099b3"
+    },
+    {
+      "image": "docker.elastic.co/kibana/kibana:8.11.3",
+      "config_digest": "sha256:5bffd7afcbcee6bf6f3a77bf40798cd166fd6f7e5148dc10e41dd47055cf6105",
+      "official_manifest_digest": "sha256:f8316cca9fc15286eb26e86451b7216a51f273be696a541914b858f889e7896e"
+    }
+  ]
+}

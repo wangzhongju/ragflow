@@ -6,11 +6,13 @@
 # ── Python virtual environments ─────────────────────────────────────────────
 .venv/
 venv/
-__pycache__/
-*.pyc
-*.pyo
-*.egg-info/
-.pytest_cache/
+**/__pycache__/
+**/*.pyc
+**/*.pyo
+**/*.egg-info/
+**/.pytest_cache/
+**/.ruff_cache/
+**/.mypy_cache/
 
 # ── Frontend dependencies and build outputs ─────────────────────────────────
 web/node_modules/
@@ -18,7 +20,7 @@ web/dist/
 
 # ── Runtime logs ────────────────────────────────────────────────────────────
 logs/
-*.log
+**/*.log
 docker/ragflow-logs/
 
 # ── Docker runtime data ─────────────────────────────────────────────────────
@@ -56,3 +58,10 @@ htmlcov/
 
 # ── Docker env (contains secrets) ───────────────────────────────────────────
 docker/.env
+docker/split/*.env
+docker/split/credentials.md
+docker/split/logs/
+docker/split/backups/
+docker/split/evidence/
+docker/split/*.tar
+docker/split/*.tar.gz

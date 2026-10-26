@@ -1,0 +1,36 @@
+name: ragflow-app
+
+services:
+  ragflow:
+    image: ${RAGFLOW_IMAGE:?Set RAGFLOW_IMAGE}
+    restart: unless-stopped
+    command: [--enable-adminserver, --init-model-provider-tables]
+    env_file: app.env
+    ports:
+      - "${APP_IP:-192.168.88.91}:${APP_WEB_PORT:-8088}:80"
+      - "${APP_IP:-192.168.88.91}:9380:9380"
+      - "${APP_IP:-192.168.88.91}:9381:9381"
+    volumes:
+      - ./logs:/ragflow/logs
+      - ./service_conf.yaml.template:/ragflow/conf/service_conf.yaml.template:ro
+      - ../entrypoint.sh:/ragflow/entrypoint.sh:ro
+    mem_limit: 48g
+    mem_reservation: 8g
+    memswap_limit: 48g
+    cpu_quota: -1
+    cpu_shares: 512
+    ulimits:
+      nofile:
+        soft: 65535
+        hard: 65535
+    logging:
+      driver: json-file
+      options:
+        max-size: "20m"
+        max-file: "5"
+    healthcheck:
+      test: [CMD, curl, -fsS, 'http://127.0.0.1:9380/api/v1/system/healthz']
+      interval: 30s
+      timeout: 15s
+      retries: 10
+      start_period: 180s

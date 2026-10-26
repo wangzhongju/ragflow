@@ -1,0 +1,14 @@
+{
+  "image": "ragflow-local:v0.27.2-progress-20261023",
+  "config_digest": "sha256:8b1165db3a34a4320ebe4df2f05e05320bf31778bef0738f0250f700ae488080",
+  "base_image": "infiniflow/ragflow:v0.27.2",
+  "base_config_digest": "sha256:e0e1d9ec4af666710a35f3f7e1e3fe6b450b6a2cfe52851f107fc5f5967bbe8f",
+  "source_revision": "a024bea0cd93f39e6652a42bf84dd20c55bc560b",
+  "patched_files_sha256": {
+    "api/db/__init__.py": "0694c61925c3030a01cb93defa171e66993fa834b2e87244f5c816591cadb986",
+    "api/db/services/pipeline_operation_log_service.py": "ac1bd87a29e852fe3adb118b01abedee16085932d4f3f6030281666d681231d7",
+    "rag/flow/pipeline.py": "e6dfe9815f4e9b40588f37b4d23af2ca53a1f110342136c3b0732ca70be2b52c",
+    "rag/svr/task_executor.py": "6747a7b3061f4016228745448a57acfca343bc159f467ffcdae82e14480f39f5",
+    "deepdoc/parser/pdf_parser.py": "c15e5a78749cf8e97ddc5aa708a6cffeedd6d0c1eaa42a13d1f435442c6e44af"
+  }
+}

@@ -1,0 +1,8 @@
+ARG BASE_IMAGE=infiniflow/ragflow:v0.27.2
+FROM ${BASE_IMAGE}
+COPY api/db/__init__.py /ragflow/api/db/__init__.py
+COPY api/db/services/pipeline_operation_log_service.py /ragflow/api/db/services/pipeline_operation_log_service.py
+COPY rag/flow/pipeline.py /ragflow/rag/flow/pipeline.py
+COPY rag/svr/task_executor.py /ragflow/rag/svr/task_executor.py
+COPY deepdoc/parser/pdf_parser.py /ragflow/deepdoc/parser/pdf_parser.py
+LABEL org.opencontainers.image.description="RAGFlow v0.27.2 task progress and Graph finalization fixes"
