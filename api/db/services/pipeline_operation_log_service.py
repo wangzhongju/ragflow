@@ -21,14 +21,13 @@ from datetime import datetime, timedelta
 
 from peewee import fn
 
-from api.db import VALID_PIPELINE_TASK_TYPES
 from api.db.db_models import DB, Document, PipelineOperationLog
 from api.db.services.canvas_service import UserCanvasService
 from api.db.services.common_service import CommonService
 from api.db.services.document_service import DocumentService
 from api.db.services.knowledgebase_service import KnowledgebaseService
 from api.db.services.task_service import GRAPH_RAPTOR_FAKE_DOC_ID, TaskService
-from common.constants import PipelineTaskType, TaskStatus
+from common.constants import VALID_PIPELINE_TASK_TYPES, PipelineTaskType, TaskStatus
 from common.misc_utils import get_uuid
 from common.time_utils import current_timestamp, datetime_format
 
@@ -198,10 +197,18 @@ class PipelineOperationLogService(CommonService):
                 return None
 
             finish_at = process_begin_at + timedelta(seconds=process_duration)
-            KnowledgebaseService.update_by_id(
-                document.kb_id,
-                {_PIPELINE_TASK_TYPE_TO_FINISH_FIELD[task_type]: finish_at},
-            )
+            ok, kb_info = KnowledgebaseService.get_by_id(document.kb_id)
+            if not ok:
+                raise RuntimeError(f"Cannot find dataset {document.kb_id}")
+            # Index entry points may share a task type. Finish only the fields
+            # still referring to this task, never a more recently queued build.
+            finish_updates = {
+                field: finish_at
+                for field in _PIPELINE_TASK_TYPE_TO_FINISH_FIELD.values()
+                if getattr(kb_info, field.replace("_finish_at", "_id"), None) == task_id
+            }
+            if finish_updates:
+                KnowledgebaseService.update_by_id(document.kb_id, finish_updates)
         elif not cls._is_final_state(progress, operation_status):
             logging.info("Skip non-final file pipeline operation log document_id=%s task_type=%s progress=%s", document_id, task_type, progress)
             return None

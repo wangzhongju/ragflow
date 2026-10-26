@@ -1847,10 +1847,13 @@ async def handle_task() -> bool:
                 # task["doc_ids"]; the first entry is used as a referent so
                 # the pipeline operation log has something to anchor to.
                 referred_document_id = (task.get("doc_ids") or [None])[0]
-            ret = PipelineOperationLogService.record_pipeline_operation(
-                document_id=task["doc_id"], pipeline_id="", task_type=pipeline_task_type, task_id=task_id, referred_document_id=referred_document_id
-            )
-            get_recording_context().save_func_return_value("PipelineOperationLogService.record_pipeline_operation", ret)
+            try:
+                ret = PipelineOperationLogService.record_pipeline_operation(
+                    document_id=task["doc_id"], pipeline_id="", task_type=pipeline_task_type, task_id=task_id, referred_document_id=referred_document_id
+                )
+                get_recording_context().save_func_return_value("PipelineOperationLogService.record_pipeline_operation", ret)
+            except Exception:
+                logging.getLogger(__name__).exception("Failed to record operation log for terminal task %s; acknowledging the processed message", task_id)
 
     redis_msg.ack()
     return True
