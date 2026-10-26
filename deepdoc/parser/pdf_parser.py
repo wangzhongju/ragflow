@@ -467,7 +467,7 @@ class RAGFlowPdfParser:
             return width - y, x
         return x, y
 
-    def _table_transformer_job(self, ZM, auto_rotate=None):
+    def _table_transformer_job(self, ZM, auto_rotate=None, callback=None):
         """
         Process table structure recognition.
 
@@ -494,6 +494,7 @@ class RAGFlowPdfParser:
         self.rotated_table_imgs = {}  # Store rotated table images
 
         assert len(self.page_layout) == len(self.page_images)
+        total_tables = sum(layout["type"] == "table" for page in self.page_layout for layout in page)
 
         # Collect layout info for all tables
         table_layouts = []
@@ -543,6 +544,8 @@ class RAGFlowPdfParser:
                     self.rotated_table_imgs[table_index] = table_img
 
                 table_index += 1
+                if callback:
+                    callback(0.63 + 0.17 * table_index / total_tables, f"Tables prepared: {table_index}/{total_tables}")
 
         assert len(self.page_images) == len(tbcnt) - 1
         if not imgs:
@@ -1800,8 +1803,14 @@ class RAGFlowPdfParser:
         start = timer()
         for page_from in range(from_page, effective_to_page, batch_size):
             page_to = min(page_from + batch_size, effective_to_page)
-            self.__images__(fnm, zoomin, page_from=page_from, page_to=page_to, callback=None)
-            chunk_boxes = self._parse_loaded_window_into_bboxes(zoomin)
+
+            def report_batch_progress(progress, message="", start=page_from, end=page_to):
+                if callback:
+                    overall = (start - from_page + (end - start) * progress) / max(1, effective_to_page - from_page)
+                    callback(overall, f"Pages {start + 1}-{end}: {message}" if message else "")
+
+            self.__images__(fnm, zoomin, page_from=page_from, page_to=page_to, callback=report_batch_progress)
+            chunk_boxes = self._parse_loaded_window_into_bboxes(zoomin, callback=report_batch_progress)
             all_boxes.extend(self._to_global_boxes(chunk_boxes))
             if callback:
                 callback((page_to - from_page) / max(1, effective_to_page - from_page), f"Structured: {page_to}/{effective_to_page} pages")
@@ -1816,7 +1825,7 @@ class RAGFlowPdfParser:
             callback(0.63, "Layout analysis ({:.2f}s)".format(timer() - start))
 
         start = timer()
-        self._table_transformer_job(zoomin)
+        self._table_transformer_job(zoomin, callback=callback)
         if callback:
             callback(0.83, "Table analysis ({:.2f}s)".format(timer() - start))
 

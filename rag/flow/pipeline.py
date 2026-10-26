@@ -35,6 +35,8 @@ class Pipeline(Graph):
         self._doc_id = doc_id
         self._flow_id = flow_id
         self._language = language
+        self._component_progress: dict[str, float] = {}
+        self._last_log_component = None
         self._kb_id = None
         if self._doc_id:
             self._kb_id = DocumentService.get_knowledgebase_id(doc_id)
@@ -49,11 +51,30 @@ class Pipeline(Graph):
         if has_canceled(self.task_id):
             progress = -1
             message += "[CANCEL]"
-        # Progress-only callbacks are used for fine-grained updates during
-        # tokenization and embedding. Do not persist an empty message as a log
-        # entry; otherwise the task log is filled with timestamp-only lines.
-        if not str(message or "").strip():
+        # Running task state must outlive the short-lived Redis trace cache.
+        if component_name in self.components and progress is not None:
+            previous = self._component_progress.get(component_name, 0.0)
+            self._component_progress[component_name] = -1 if previous < 0 or progress < 0 else max(previous, min(progress, 1.0))
+        message = str(message or "")
+        now = datetime.datetime.now().strftime("%H:%M:%S")
+        if component_name != "END" and self._doc_id and self.task_id:
+            finished = -1 if any(value < 0 for value in self._component_progress.values()) else sum(self._component_progress.values()) / max(1, len(self.components))
+            msg = ""
+            if message.strip():
+                if self._last_log_component != component_name:
+                    msg = f"\n-------------------------------------\n[{self.get_component_name(component_name)}]:\n"
+                msg += f"{now}: {message}\n"
+            try:
+                TaskService.update_progress(self.task_id, {"progress": finished, "progress_msg": msg})
+            except Exception:
+                logging.getLogger(__name__).exception("Failed to update pipeline task progress for %s", self.task_id)
+
+        # Numeric-only updates advance the task without timestamp-only log lines.
+        if not message.strip():
+            if has_canceled(self.task_id):
+                raise TaskCanceledException(message)
             return
+        self._last_log_component = component_name
         try:
             bin = REDIS_CONN.get(log_key)
             obj = json.loads(bin.encode("utf-8")) if bin else []
@@ -82,25 +103,7 @@ class Pipeline(Graph):
                         "trace": [{"progress": progress, "message": message, "datetime": datetime.datetime.now().strftime("%H:%M:%S"), "timestamp": timestamp, "elapsed_time": 0}],
                     }
                 ]
-            if component_name != "END" and self._doc_id and self.task_id:
-                percentage = 1.0 / len(self.components.items())
-                finished = 0.0
-                for o in obj:
-                    for t in o["trace"]:
-                        if t["progress"] < 0:
-                            finished = -1
-                            break
-                    if finished < 0:
-                        break
-                    finished += o["trace"][-1]["progress"] * percentage
-
-                msg = ""
-                if len(obj[-1]["trace"]) == 1:
-                    msg += f"\n-------------------------------------\n[{self.get_component_name(o['component_id'])}]:\n"
-                t = obj[-1]["trace"][-1]
-                msg += "%s: %s\n" % (t["datetime"], t["message"])
-                TaskService.update_progress(self.task_id, {"progress": finished, "progress_msg": msg})
-            elif component_name == "END" and not self._doc_id:
+            if component_name == "END" and not self._doc_id:
                 obj[-1]["trace"][-1]["dsl"] = json.loads(str(self))
             REDIS_CONN.set_obj(log_key, obj, 60 * 30)
 
@@ -121,6 +124,8 @@ class Pipeline(Graph):
         return []
 
     async def run(self, **kwargs):
+        self._component_progress.clear()
+        self._last_log_component = None
         log_key = f"{self._flow_id}-{self.task_id}-logs"
         try:
             REDIS_CONN.set_obj(log_key, [], 60 * 10)
@@ -152,10 +157,6 @@ class Pipeline(Graph):
             async def invoke():
                 nonlocal last_cpn, cpn_obj
                 await cpn_obj.invoke(**last_cpn.output())
-                # if inspect.iscoroutinefunction(cpn_obj.invoke):
-                #    await cpn_obj.invoke(**last_cpn.output())
-                # else:
-                #    cpn_obj.invoke(**last_cpn.output())
 
             tasks = []
             tasks.append(asyncio.create_task(invoke()))

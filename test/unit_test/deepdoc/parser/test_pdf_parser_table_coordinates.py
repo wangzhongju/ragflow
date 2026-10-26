@@ -337,7 +337,9 @@ def test_table_transformer_keeps_rotated_ocr_and_tsr_coordinates_aligned(monkeyp
         },
     ]
 
-    parser._table_transformer_job(ZM=1, auto_rotate=True)
+    progress = []
+    parser._table_transformer_job(ZM=1, auto_rotate=True, callback=lambda value, message: progress.append((value, message)))
+    assert progress == [(0.8, "Tables prepared: 1/1")]
 
     assert [box["text"] for box in parser.boxes] == ["A1", "B2"]
     assert [box["layoutno"] for box in parser.boxes] == ["table-0", "table-0"]
@@ -345,3 +347,34 @@ def test_table_transformer_keeps_rotated_ocr_and_tsr_coordinates_aligned(monkeyp
     assert [box["R_top"] for box in parser.boxes] == [210, 240]
     assert [box["C"] for box in parser.boxes] == [0, 1]
     assert [box["C_left"] for box in parser.boxes] == [105, 170]
+
+
+def test_multi_batch_pdf_reports_stages_without_changing_page_windows(monkeypatch):
+    module = _load_pdf_parser(monkeypatch)
+    monkeypatch.setenv("PDF_PARSER_PAGE_BATCH_SIZE", "50")
+    parser = module.RAGFlowPdfParser.__new__(module.RAGFlowPdfParser)
+    parser.total_page_number = lambda *_args, **_kwargs: 146
+    windows = []
+
+    def images(_file, _zoom, page_from, page_to, callback):
+        windows.append((page_from, page_to))
+        callback(0.3)
+        callback(0.6)
+
+    def parse_window(_zoom, callback):
+        callback(0.63, "Layout analysis")
+        callback(0.8, "Tables prepared")
+        callback(1, "Structured")
+        return [{"window": windows[-1]}]
+
+    parser.__images__ = images
+    parser._parse_loaded_window_into_bboxes = parse_window
+    parser._to_global_boxes = lambda boxes: boxes
+    progress = []
+    boxes = parser.parse_into_bboxes(b"pdf", callback=lambda value, message: progress.append((value, message)))
+    assert windows == [(0, 50), (50, 100), (100, 146)]
+    assert len(boxes) == 3
+    assert [value for value, _ in progress] == sorted(value for value, _ in progress)
+    assert progress[-1][0] == 1
+    assert (50 * 0.63 / 146, "Pages 1-50: Layout analysis") in progress
+    assert ((100 + 46 * 0.8) / 146, "Pages 101-146: Tables prepared") in progress
