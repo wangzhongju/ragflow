@@ -13,6 +13,7 @@ services:
     volumes:
       - ./logs:/ragflow/logs
       - ./service_conf.yaml.template:/ragflow/conf/service_conf.yaml.template:ro
+      - ../../conf/llm_factories.json:/ragflow/conf/llm_factories.json:ro
       - ../entrypoint.sh:/ragflow/entrypoint.sh:ro
     mem_limit: 48g
     mem_reservation: 8g

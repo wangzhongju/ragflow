@@ -552,3 +552,270 @@ GET ragflow_514a9b36ce8511f18a4cdf41f1d8e4ee/_search
 **视觉增强失败与最终成功的语义仍需明确。** 当前普通解析允许图片理解失败后完成文本入库；对训练数据制作或评测，必须另验媒体描述覆盖率，不能仅筛选 `run=3`。Pipeline 补丁的失败状态保留只作用于该实例回调；底层 TaskService 仍允许最终 1 覆盖 -1，不应将单元测试结论扩展成全系统不可恢复终态保证。
 
 本轮结论是保留有证据支持的改动，记录上述未覆盖边界。没有以修复配置问题为由增加 vLLM 特判、跳过 Compiler、强制生成成功状态或移除有效测试；也没有改动现有模型配置、重建知识库或发布新的运行镜像。
+
+## 11. 2026-10-26：t1/t2 图片关联、模型报错与空 Graph
+
+### 11.1 当前对象与核查范围
+
+本次读取 91 新应用及其连接的 92 存储，时间为 Asia/Shanghai；本节描述当前 t1/t2，不沿用第 9 节已删除知识库的状态。两台服务器与本地 HEAD 均为 `7339cfbede21a8d312a13c979dc3df83aede2ffc`，新应用仍使用 `ragflow-local:v0.27.2-progress-20261023`，新应用及四项存储健康检查均正常。
+
+| 项目 | t1 | t2 |
+| --- | --- | --- |
+| KB ID | `7a3d7636d10e11f19f5f2327f921c6ea` | `a7aa8c24d11011f19f5f2327f921c6ea` |
+| 文档 ID | `ac6dc1c4d10e11f19f5f2327f921c6ea` | `c0980694d11011f19f5f2327f921c6ea` |
+| 实际流程 | `no_model_pip` / `29addbccd0df11f184dc27e9a0ee1736` | `model_pip` / `47f1dfa4ce8f11f18a4cdf41f1d8e4ee` |
+| 本次解析 | 15:28:58—15:29:00 | 15:42:14—15:42:32 |
+| DOCX 媒体转文本 | true；VLM 配置为空 | false；指定 VLM |
+| Parser 输出 | 88 个文本项，其中 4 项有图片引用 | 76 个文本、8 个表格、4 个图片项 |
+| 最终 ES 原文 chunk | 3 个文本；0 个图片引用 | 13 个文本、8 个表格、4 个图片；4 个图片引用 |
+| 文档状态 | run=3、progress=1 | run=3、progress=1 |
+
+两库只有同一份 `成都开源计算-初步技术方案模板.docx`，直接读取 MinIO 原文件所得 SHA-256 均为 `f79cc0d6975c640200ae044213b9a6a5f177e64f9be3b3efccb22ed97f44d8ed`。两文档自身的 pipeline_id 与所属 KB 一致，确实都执行了 dataflow。Embedding 均为通义 `text-embedding-v4`，本次两库均完成向量推理和索引写入。
+
+核查覆盖当前配置、历史运行 DSL、任务和操作日志、Worker 错误、目标 KB 的全部 ES 记录、Parser 与最终 chunk 的图片对象。补充模型排查时查询一次模型列表，并发起三个最小诊断请求，均被服务端拒绝，详见 11.3.1；未重建或修改知识库。关键 13 个运行文件与本地统一换行后的 SHA-256 全部一致。
+
+### 11.2 无视觉模型为何仍能存图片，以及 t1 的关联实际在哪里丢失
+
+图片提取、对象存储与模型生成描述是三个独立步骤。当前文件为 DOCX：
+
+1. `rag/flow/parser/parser.py::_docx` 调用 `rag/app/naive.py::Docx`；`deepdoc/parser/docx_parser.py::get_picture` 找到段落中的 `pic:pic`，读取 `a:blip/@r:embed`，通过 `document.part.related_parts` 获取图片二进制，包装为 `LazyImage`。这一步读取 Word 内嵌资源，不需要 VLM，也不是 PDF OCR。
+2. Parser 生成包含 `text/image/doc_type_kwd` 的结构项。t1 的 `flatten_media_to_text=true` 只把媒体类型改成 `text`，没有清除 `image`；视觉增强函数只处理 `image/table` 类型，所以本次没有对这些项生成图片描述。
+3. Parser 的 `_invoke` 遍历 JSON 项调用 `rag/utils/base64_image.py::image2id`：处理图片、编码 JPEG，通过 `STORAGE_IMPL.put` 写入 MinIO，并以 `img_id="imagetemps-<UUID>"` 替换内存图片。当前实际桶为 `imagetemps`，对象键为 UUID。
+4. 正常媒体分块会保留 `img_id`，Indexer 将它与 `doc_id/kb_id/content_with_weight` 一并写进 ES；接口对外通常命名为 `image_id`，图片读取接口拆分桶与对象键后取回字节。关联保存在 chunk 记录中，并非靠 MinIO 对象名猜测原文位置，也不是 MySQL 图片外键。
+5. **t1 当前没有完成第 4 步的关联保留**：TokenChunker 的文本分支跳过空字符串，且不携带输入 `img_id`；本次 4 个图片项的文本全部为空。因此 Parser 阶段的 4 个图片对象仍在 MinIO，最终 3 个文本 chunk 全部没有 `img_id`。运行 DSL 仍能追溯这些对象，但普通 chunk 检索无法通过它们展示原图。
+
+实测 t1 四个对象键为 `e8d9057ed10e11f185eb1367b9404d93`、`e8d95588d10e11f185eb1367b9404d93`、`e8d9577cd10e11f185eb1367b9404d93`、`e8d9598ed10e11f185eb1367b9404d93`，大小分别为 15,203、79,761、43,359、112,614 字节，均可 stat。
+
+若后续上传 PDF，才走 `RAGFlowPdfParser.parse_into_bboxes`：页面渲染、OCR、版面/表格识别后按坐标裁出图表和文本区域，再进入图片存储链。PDF chunk 预览还可能按合并后的坐标重新裁图；因此 MinIO 图片不一定是原文件内嵌图片，也可能是页面区域截图。无 VLM 仍可提取/裁图，但不会自动获得语义描述。清空 VLM 配置本身也不是可靠禁用方式，媒体增强函数可能回退租户默认视觉模型；t1 本次跳过增强是媒体已标成文本。
+
+### 11.3 t2 的三类模型调用均失败
+
+运行 DSL 中 Parser 的 DOCX VLM、Transformer（后端组件为 Extractor）、Compiler 都指向模型 ID `7a87cfeed0df11f184dc27e9a0ee1736`：
+
+- Provider：`Tongyi-Qianwen`，实例：`wzj_tongyi`。
+- 模型：`qwen3-vl-flash`，类型值 9（Chat/Vision），注册验证状态 `unknown`。
+- 实例端点：`https://dashscope.aliyuncs.com/compatible-mode/v1`。
+
+15:42:16 的 4 次图片请求均返回 `404`、`model_not_found`、`Model not exist.`。15:42:17—20 的 25 次摘要调用也返回同一错误；15:42:28 的 Compiler 调用出现同一错误及 `ProviderErrorResult`。单看 404 无法区分名称、地域或权限；进一步核实官方公告与同实例直连结果后，已确认本次使用了下线模型，见下一小节。当前错误不是此前 `Arrearage` 欠费错误。
+
+图片请求异常在 `rag/app/picture.py::vision_llm_chunk` 被捕获，回调报错后返回空描述，后续仍继续。`enhance_media_sections_with_vision` 将空描述列表字符串化，现场 4 个图片项的文本成为 `['']`；这不是模型生成的有效描述。TokenChunker 又按设置拼接前后文本，所以图片 chunk 中可能看到上下文/图题，不能据此判断 VLM 已理解图片。
+
+t2 的 4 个图片 chunk 与 MinIO 关联仍完整。例如 chunk `0a29d435abdd5936` 的 `img_id` 为 `imagetemps-c44e0040d11011f185eb1367b9404d93`，对应对象为 15,203 字节。问题在描述生成，不在图片未提取或 MinIO 未写入。
+
+### 11.3.1 model_not_found 的确定原因与独立额度障碍
+
+**确定原因是模型下线，而 RAGFlow 目录仍允许选择。** 阿里云 [延期下线公告](https://www.alibabacloud.com/en/notice/model_studio_notice_on_the_postponed_retirement_of_selected_legacy_models_7d0?_p_lc=1) 明确将 `qwen3-vl-flash` 主线及其两份快照列为 2026-10-10 00:00（UTC+8）停止服务的模型。国内 [主线模型下线公告](https://www.aliyun.com/notice/118344) 的生效日一致。
+
+10 月 26 日 16:11—16:12 从 91 应用容器复测，密钥直接从当前实例配置读取，不输出或写入证据文件；绕过 RAGFlow/LiteLLM，直接请求实例已有官方地址：
+
+| 请求 | 结果 | 能证明什么 |
+| --- | --- | --- |
+| `GET /compatible-mode/v1/models` | HTTP 200，180 个模型，缺少 `qwen3-vl-flash` | 当前密钥/端点可访问模型目录，但旧模型已不在列表 |
+| 旧模型 `chat/completions`，仅 `Reply OK.`，输出上限 8 tokens | HTTP 404，`model_not_found`，request_id=`b761cf39-927f-9a05-b760-7680dd829bdd` | 无图片、无 pipeline、无 LiteLLM 仍复现，排除它们改写请求导致本次 404 |
+| 在列的 `qwen3.5-flash`，合成人名/组织 JSON，输出上限 64 tokens | HTTP 403，`AllocationQuota.FreeTierOnly` | 另有免费额度耗尽/仅免费调用限制，尚未验证生成成功 |
+| 同模型，64×64 纯红合成图片，输出上限 16 tokens | 同上 | 图片调用也受相同额度限制；未发送业务文档图片 |
+
+第三、四项响应要求补充可用额度或处理控制台的仅免费调用限制。官方 [错误码说明](https://help.aliyun.com/en/model-studio/error-code) 还列出账号未完成验证等可能情况，具体控制台状态本轮未读取；因此不能断言只有一个开关问题，也不能据此声称账号所有模型均不可用。两个 403 是切换模型时暴露的独立障碍，不是旧模型 404 的解释。本轮未关闭免费限制、充值、修改实例或替换流程模型，`qwen3.5-flash` 只是诊断对照，并未通过业务可用性验收。
+
+页面仍显示旧模型的原因也已查明：`conf/llm_factories.json` 仍含 `qwen3-vl-flash`；`common/settings.py` 加载该静态目录，`provider_api_service.create_provider_instance` 可将目录模型批量注册，未取得验证结果的条目保存为 `verify=unknown`。当前条目正是此状态。因此本地“已注册/可选择”与服务商当前实际可调用模型不是同一件事；后续应同步下线信息并校验所选模型，而不是仅修改模型展示名称。
+
+### 11.4 摘要另有正文未绑定及检索污染问题
+
+Transformer 的实际提示词仍为 `Text to Summarize:\n[Insert text here]`，`inputs={}`，输出目标为 `summary`。`Extractor._invoke` 虽然循环 25 个 chunk，但只有解析出输入变量后才替换逐块正文；`LLM._sys_prompt_and_msg` 只做已配置变量的格式化。因此本次发出的摘要请求没有实际 chunk 正文。即使模型恢复，也需把上游 chunks 绑定为正文变量并在提示词中引用，不能保留默认占位文字。
+
+本次运行 DSL 的 25 个 `summary` 全部为：
+
+```text
+**ERROR**: MAX_RETRIES_EXCEEDED - litellm.NotFoundError: DashscopeException - Model not exist.
+```
+
+`Extractor` 将错误字符串直接赋给摘要，没有转成节点失败。`Tokenizer` 又优先用非空摘要生成 `content_ltks/content_sm_ltks`，覆盖正文的全文检索分词；ES 的 25 条记录均出现错误文本的分词。`dataflow_service` 入库前删除 `summary` 字段，所以最终 ES 没有该字段，不代表摘要调用没有发生。
+
+Indexer 的向量字段配置为 `fields="text"`，故本次向量仍根据正文生成；摘要没有自动拼入向量文本或 `content_with_weight`。当前配置实际影响的是全文检索分词，不能将其描述为已经完成“正文加摘要共同向量化”。需要明确希望增强哪一路检索，再设置字段和保留策略。
+
+### 11.5 为什么执行 Compiler 后 Graph 仍为空
+
+本次不是缺少 Compiler，也不是文档没有绑定流程。模板组 `22f6f8c4ce8f11f18a4cdf41f1d8e4ee` 已解析出一个有效 `knowledge_graph` 模板 `compile_graph`；日志确认 25 个 chunk 进入编译：
+
+```text
+15:42:27 compile batch 1 (25 chunks) for template (1/1)
+15:42:28 1/1 batches: 0 items
+15:42:28 Document knowledge compilation done (1/1): inserted=0, updated=0, duplicates_dropped=0
+```
+
+同一时段 Worker 明确记录对应文档/模板的模型调用失败。调用池记录 `ProviderErrorResult` 后仍返回错误字符串；后续 `gen_json` 与 `_struct_unwrap_items` 没有把该字符串作为业务失败阻断，最终得到空实体/关系列表。Compiler 随后透传原文 chunks，Embedding 和写索引仍能完成；不能将零输出解释为“文档本来没有可抽取实体”。
+
+15:53:45 创建的 Artifacts 任务 `5f04197ad11211f19f5f2327f921c6ea` 为 `structure_graph`，15:53:49—50 输出 `Scanning doc_graph rows...` → `No doc_graph rows found.`。它只聚合 Compiler 已写入的文档结构，不会重新对普通文本做实体抽取；`dataset_structure_merger.py` 无输入分支直接报进度 1。
+
+按 t2 KB 过滤的 ES 全量结果只有 25 条原文 chunk，entity、relation、graph 均为 0。因此这是上游编译失败造成的无输入，且完成状态掩盖了增强失败；不是已有图谱被前端隐藏。反复点击 Artifacts Graph 不会修复上游数据。
+
+### 11.6 处理顺序与验收
+
+1. 替换已下线的 `qwen3-vl-flash`，并先解决所选模型的额度/权限问题，再分别验证 VLM 图片描述和 Chat 文本/JSON 输出。可分别选模型，也可使用已实测同时支持两种任务的模型；不要把本轮返回 403 的对照模型当作已验收替代品。
+2. 修正 Transformer 的正文变量绑定，明确摘要是否用于全文检索、向量文本或独立字段。需要“保留图片但不做 VLM”的流程时，应单独控制增强，不靠媒体转文本间接关闭。
+3. 代码改进应在错误所属层阻断：禁止将 `**ERROR**` 作为摘要/JSON 结果消费，防止错误分词入库；明确媒体增强失败、编译失败与合法零结果的不同状态；空图不得被误认为成功生成。
+4. 配置修正后重新解析现有文档，核验 4 张图有有效描述、摘要与各块正文相关、检索分词没有错误文本、Compiler 写入非零实体/关系。重解析会清理旧切片/图片，应按已有备份和重建流程操作，不用 SQL 伪造完成状态。
+5. 最后再生成 Artifacts Graph，验收非零节点/关系、来源文档和任务完成记录；仅看 100% 不足以通过。若文档内容变化，chunk 数量可变，不把本次 25 条作为固定验收值。
+
+本轮只更新文档，不修改业务代码、不重启服务、不清空缓存、不重建知识库。私有证据位于已忽略的 `docker/split/evidence/`：`detail-20261026.json`（配置、运行 DSL、任务）、`storage-20261026.json`（原文件哈希、ES 与图片对象）、`runtime-20261026.json`（源码哈希和 Worker 错误）、`model-availability-20261026.json`（模型目录及旧模型 404）、`model-control-20261026.json`（对照模型两次 403）。凭据未写入文档或诊断脚本。
+
+## 12. 2026-10-26：通义模型目录更新、重新加载与付费设置
+
+本节是第 11 节之后的实际配置变更。用户明确选择“只更新模型目录，我随后在页面选择流程模型”。本次没有替换流程模型、修改租户默认模型、重新解析文档或操作百炼计费开关。
+
+### 12.1 官方依据与更新结果
+
+核查日期为 2026-10-26，两份公告的停止服务日期均已到达：
+
+- [延期下线公告](https://www.alibabacloud.com/en/notice/model_studio_notice_on_the_postponed_retirement_of_selected_legacy_models_7d0?_p_lc=1)：明确列出的主线及快照模型于 2026-10-10 停服，包括 `qwen3-vl-flash`。
+- [补充下线公告](https://www.alibabacloud.com/en/notice/model_studio_notice_of_retirement_for_selected_legacy_models_7d9?_p_lc=1)：补充数学、翻译、OCR、ASR、Omni、VL 等具体模型/快照的下线清单。按表格第一列的完整模型 Code 匹配，不能把推荐替代模型一并删除。
+
+将公告明确下线的名称与原目录取交集，本次移除 61 项；`Tongyi-Qianwen` 静态目录和已注册实例 `wzj_tongyi` 均由 132 项减为 71 项。完整名称、来源和新目录 SHA-256 保存在 [tongyi-catalog-20261026.json](../docker/split/tongyi-catalog-20261026.json)。没有批量增加或自动选择替代模型。
+
+同一密钥的官方 `/models` 返回 180 项，用于交叉核查，不能充当全部服务类型的下线清单。例如 `text-embedding-v4` 未出现在该接口中，但本次文档解析实际成功使用它，所以保留。`qwen3-vl-plus` 主线也保留，仅删除公告点名的两份快照。保留项不代表已逐个通过当前账号的权限、额度及生成质量验证。
+
+### 12.2 更新涉及三处状态
+
+1. `conf/llm_factories.json`：系统支持目录，供添加实例/模型时使用；API 启动时加载到 `FACTORY_LLM_INFOS`。
+2. MySQL `tenant_model`：已注册实例的模型清单；修改 JSON 或重启本身不会清掉历史注册项。
+3. 容器内目录与进程内存：原部署把 JSON 打进镜像，宿主机改文件不会自动进入容器。本次在 `docker/split/compose.app.yml` 增加 `../../conf/llm_factories.json:/ragflow/conf/llm_factories.json:ro`，再重建新应用容器，使 API/Worker 都重新加载；镜像仍为 `ragflow-local:v0.27.2-progress-20261023`。
+
+### 12.3 本次历史操作与备份
+
+2026-10-26 先确认队列空闲，再备份目录/Compose 和被删注册项，清理 61 条记录后重建新应用容器；17:12:51（UTC+8）启动，健康检查正常，已注册与支持目录接口均为 71 项。两流程的选择保持原样。此后 2026-10-27 已执行第 13 节的完整同步，当前数量以第 13 节为准。
+
+历史文件备份位于两服务器各自的 `docker/split/backups/20261026-171150-model-catalog/`；91 的 `model-rows.json` 包含当时删除的 61 条记录，权限为 0600。容器日志目录另存 `tongyi-model-rows-20261026-171150.json`。它们用于历史审计，不应直接覆盖后续用户修改。
+
+原来的只删下线项脚本已被完整同步工具替换，后续统一使用第 13 节的 `plan/apply/verify/rollback`，不再执行旧 `--manifest/--apply` 命令。当前仍为文件级绑定挂载；整工程挂载准备已按用户要求撤销。
+
+### 12.5 有余额时如何允许按量付费继续调用
+
+`AllocationQuota.FreeTierOnly` 与余额不足不是同一错误。官方说明：未实名账号强制仅使用免费额度；已实名账号如果开启“免费额度用完即停”，即使有余额，免费额度耗尽后仍会停止调用。参见[免费额度与开关规则](https://help.aliyun.com/zh/model-studio/new-free-quota)和[错误码](https://help.aliyun.com/en/model-studio/error-code)。
+
+1. 用 **API Key 所属账号**在电脑端登录[百炼北京地域的免费额度页](https://bailian.console.aliyun.com/cn-beijing/costing-balance/free-quota)，核对实名认证状态；未实名时开关不显示，须先完成认证。
+2. 搜索实际准备调用的模型 Code，在操作列关闭“免费额度用完即停”；也可从批量设置/批量操作菜单选择“批量关闭”，勾选目标模型。主线与日期快照分别核对，不要只关闭另一个同系列模型的开关。
+3. 关闭后免费额度仍会优先抵扣，用尽后允许按量计费。官方提示状态同步可能需要约半小时，等待生效后再作最小调用验证；成功后在模型用量/账单中核对。这不是 RAGFlow 的 `.env` 开关，云端设置生效本身无需重启 RAGFlow。
+4. 若仍为同一 403，检查当前密钥是否属于刚修改的账号、所选模型/地域及实名认证状态，并记录 request_id 交给阿里云核查；若错误变为其他码，按新错误排查。本次未进入云控制台读取或修改开关，因此尚未确认账号实际是哪项限制。
+
+当前实例地址仍是 `https://dashscope.aliyuncs.com/compatible-mode/v1`。用户已确认余额充足；本轮不要求重复充值，也没有替用户开通付费或发起新的计费推理。用户关闭限制并重选模型后，再按第 11.6 节验收图片、摘要与 Graph。
+
+## 13. 通义模型完整同步流程（2026-10-27）
+
+### 13.1 来源、范围与同步规则
+
+入口为 [sync_model_catalog.py](../docker/split/sync_model_catalog.py)，在 **91 Linux 宿主机**运行；Python 3.10 标准库负责操作文件/容器，数据库和 HTTP 依赖使用现有应用容器。它替换第 12 节的单次删除工具，不需要新增整工程挂载或重打镜像。
+
+官方 [查询模型列表 API](https://help.aliyun.com/zh/model-studio/list-models) 提供分页总数、模态、能力、上下文及下线信息。北京业务空间的新域名为 `https://{WorkspaceId}.cn-beijing.maas.aliyuncs.com/api/v1/models`；本部署已有的 `https://dashscope.aliyuncs.com/api/v1/models` 本次实测可用。工具只向后者发送当前北京实例密钥，并固定 `service_site=asia-pacific-china`、`supports=inference`，不筛除平台上的第三方推理供应商。其他地域或业务空间域名需要先审阅并扩展地域策略，不能直接把密钥转发到任意 URL。
+
+这里同步的是官网目录元数据，不是逐模型推理验收。全量官网条目进入快照；RAGFlow 目录只增加当前适配器具有对应调用路径的模型。账号余额、权限、额度和生成质量仍需独立验收，新项的 `verify=unknown`，不会伪造验证成功。
+
+| 情况 | 处理 |
+| --- | --- |
+| 新增模型 | 分页取完全部官方条目，根据能力和现有适配器生成目录项，并注册到指定实例 |
+| 规格/能力变化 | 更新上下文预算、模型类型、工具调用和思考标记；已有模型 ID、状态、验证结果及其他自定义 extra 保持 |
+| 明确下线且已到生效时间 | 按官方 `offline_time` 或策略中的公告清单删除；列出涉及的流程引用，不自动替换流程模型 |
+| 未来下线 | 暂保留，在报告中给出生效时间；维护策略中的公告记录，避免后续来源列表移除条目后丢失下线证据 |
+| 旧项在列表缺席 | 保留并报告，不把接口缺席、地域差异或别名差异当作已下线 |
+| 无对应适配器或关键规格缺失 | 新项不注册，写入 `excluded`；旧项原样保留并写入 `retained_for_review` |
+| 请求失败、分页缺失/重复、总数变化、未知下线结构 | 中止生成计划，不使用残缺数据更新目录 |
+
+`TR` 同时包含文本 Embedding 和 Rerank，不能全部映射成 embedding。当前仅支持已核对调用协议的文本向量/排序、普通 Chat/Vision、Qwen3-ASR/Fun-ASR-Flash 以及 Sambert TTS。图像/视频生成、实时会话、部分 Omni、异步向量及新音频协议等完整保存在官网快照中，待适配器支持后再扩展 `_normalize`，不能仅增加名称就声称可用。
+
+`max_tokens` 对 Chat 表示上下文预算，不是最大输出 Token；例如 `qwen3.8-flash` 官方返回上下文 1,000,000、最大输出 131,072。原始全部规格保留在 `official.json`。官方未提供数值的条目使用有来源的补充策略，音频时长/字符限额不会伪造成 Token 上下文。现有 Embedding 适配器还会截断输入，目录规格更新本身不会改变解析或截断算法。
+
+### 13.2 维护策略与上线前准备
+
+[tongyi-sync-policy.json](../docker/split/tongyi-sync-policy.json) 维护以下内容：
+
+- 同步服务商和地域；当前为 `Tongyi-Qianwen` / 中国部署范围。
+- 官方下线公告的来源、准确模型 Code 和生效日期。当前包含第 12 节已核实的 61 项；后续核对[模型下线公告](https://help.aliyun.com/zh/model-studio/model-depreciation)，只补入公告明确列出的名称。
+- 官方列表缺少 Token 数值时的补充值和来源，例如 text-embedding 系列参照[同步向量 API](https://help.aliyun.com/en/model-studio/text-embedding-synchronous-api)。接口有明确正数时优先使用接口值；文档出现不同口径时先区分单条、单批次、上下文和输出限制。
+
+将脚本、策略、测试及文档同步到 91/92；不要覆盖服务器已有环境文件或未经核对的代码改动。确认本地/91/92 的基准目录一致，并先完成这组离线检查：
+
+```bash
+cd /home/cdky/workspace/github/ragflow
+python3 -m unittest test.unit_test.test_sync_model_catalog
+```
+
+密钥从指定 `tenant_model_instance` 读入容器内存，不放在命令行或快照中。操作目录为 0700、备份/计划文件为 0600。运行前停止提交新的解析任务；`apply/rollback` 会检查文档和 Redis 队列是否空闲，但这不等于禁止其他用户在检查后提交任务，应选择维护窗口。
+
+### 13.3 生成完整快照与差异预览
+
+```bash
+cd /home/cdky/workspace/github/ragflow
+run="docker/split/backups/tongyi-sync-$(date +%Y%m%d-%H%M%S)"
+python3 docker/split/sync_model_catalog.py plan \
+  --instance-id 79513f20d0df11f184dc27e9a0ee1736 \
+  --work-dir "$run"
+```
+
+`plan` 只读取官网/数据库并写入新的工作目录，已有目录会拒绝覆盖。检查以下文件：
+
+| 文件 | 用途 |
+| --- | --- |
+| `official.json` | 全部分页、request_id、官网总数、原始模型规格与下线时间 |
+| `catalog.before.json` / `catalog.after.json` | 完整目录备份和候选目录，其他服务商内容不变 |
+| `report.json` | 新增、更新、删除、未来下线、未支持/待复核项及被删除模型的流程引用 |
+| `plan.json` | 实例范围、原/目标注册行、文件和策略哈希，用于应用与回退 |
+
+重点审阅 `add/update/remove`、`retained_for_review`、`scheduled_retirements`。新 API 协议不能根据名字猜测，须核对 `rag/llm/` 中对应适配器再修改映射规则。需要修改策略或代码时生成新的计划，避免对旧快照手工改 ID 或记录。
+
+### 13.4 应用、重新加载与验收
+
+```bash
+python3 docker/split/sync_model_catalog.py apply --work-dir "$run"
+python3 docker/split/sync_model_catalog.py verify --work-dir "$run"
+```
+
+应用过程依次执行：检查计划未超过 24 小时、策略/目录未变化且未跨越新的下线时刻 → 检查任务空闲 → 锁定并核对指定实例原记录 → 在事务中增量新增/更新/删除 → 原子替换宿主目录文件 → 重建 **ragflow-app-ragflow-1** → 等待健康状态。数据库比较不通过即拒绝写入，避免覆盖用户在计划生成后的配置修改；不会重建整个模型实例或重置现存 ID。
+
+目录通过文件 bind mount 提供给容器。原子替换文件会产生新 inode，所以工具使用 `ops.sh app up -d --force-recreate --pull never` 重新绑定并加载，而非只修改宿主文件或仅重启进程。无任何变化时不重建。91 的旧应用和 92 存储不参与重启。
+
+`verify` 核对数据库、宿主文件、容器挂载文件和应用健康状态。页面刷新后可在模型管理中查看新增项；用已登录会话检查两接口：
+
+```text
+GET /api/v1/providers/Tongyi-Qianwen/instances/79513f20d0df11f184dc27e9a0ee1736/models
+GET /api/v1/providers/Tongyi-Qianwen/instances/79513f20d0df11f184dc27e9a0ee1736/models?supported=true
+```
+
+验收后再生成一次新计划，确认新增/更新/删除均为 0、`db_changed=false`、前后目录哈希相同。重复计划仍会请求官网，如果官网恰好有变化，应审查新差异，不能强行凑成零。
+
+### 13.5 同步工程副本与回退
+
+工具在 91 更新真实运行目录和共用数据库；完成后将该目录同步回本地，再同步到 92。先对照副本差异，确认没有需要保留的并发编辑。以下在本地 PowerShell 执行：
+
+```powershell
+cd D:\workspace\proj\github\ragflow
+scp cdky@192.168.88.91:/home/cdky/workspace/github/ragflow/conf/llm_factories.json conf/llm_factories.json
+scp conf/llm_factories.json cdky@192.168.88.92:/home/cdky/workspace/github/ragflow/conf/llm_factories.json
+```
+
+92 不重复执行数据库同步。完整记录结果到 `docs/update.md`，将文档/策略/工具保持三端一致。运行快照在忽略的 backups/evidence 路径，不提交凭据、模型原始请求数据或整份数据库快照。
+
+数据库事务、宿主文件替换、容器重建不是一个跨系统事务。任一步骤失败都保留备份，`operation.json` 标记已执行阶段；不要反复尝试覆盖异常状态。可先检查错误，或在同一工作目录执行：
+
+```bash
+python3 docker/split/sync_model_catalog.py rollback --work-dir "$run"
+python3 docker/split/sync_model_catalog.py verify --work-dir "$run"
+```
+
+回退仅接受原/目标两种已知状态；若用户之后改过模型行或目录，会拒绝覆盖。成功回退恢复原记录及原目录并重新加载，`verify` 自动验收同步前版本。重复回退仍会重新加载，确保上次加载失败后可恢复容器挂载。回退后也同步本地/92 副本。恢复目录不会让阿里云已停服的模型恢复调用。此次回退逻辑通过离线模拟测试验证，未为演练而回退线上已同步数据。
+
+### 13.6 本次实际结果
+
+- 时间：2026-10-27；新容器启动于 09:38:55（UTC+8），健康检查通过。工作目录为 91 的 `docker/split/backups/tongyi-sync-20261027/`。
+- 官网快照 **359 项**；按现有适配器映射 **159 项**，另保留 **15 项待复核旧条目**，最终目录/实例 **71 → 174 项**。新增 103 项，静态元数据更新 56 项，实际数据库更新 48 行，删除 0 项。200 个官网条目没有自动生成适配目录项，其中 12 项作为已有待复核条目保留；另外 3 个保留项未在官网快照中出现。
+- 新增 `qwen3.8-flash` 等模型；页面 API 实测返回 Chat/Vision、上下文 1,000,000、工具调用/思考标记及 `verify=unknown`，两目录接口均为 HTTP 200、业务码 0、174 项。旧 `qwen3-vl-flash` 未被重新加入。
+- 待复核旧条目包括部分实时语音、Omni、翻译模型，以及未在该快照出现的 `kimi/kimi-k2.5`、两个 DeepSeek-Llama 蒸馏模型。它们不属于已通过本轮适配/权限验收的新项；详细原因见报告。
+- 4 个 Qwen3.5 条目给出 2027-01-19 10:00（UTC+8）的未来下线信息，本次未提前删除。后续按 13.2 维护已确认的公告/时间记录。
+- 71 个既有模型的 ID、状态和 verify 保留；流程、3 份文档、3 个知识库、租户、模型组及其他实例模型记录的前后哈希一致。没有切换流程模型、重建知识库、发起计费推理或修改云端额度设置。
+- 本地与 Linux 宿主机的定向测试、Ruff 检查通过；重新获取官网并生成计划，目录和数据库均无二次变更。新目录 SHA-256：`71b9b306969e325bc2655a93fc16cc1cbbb2230ae2c22dd8206699a62ac2633b`。配置、工具和文档同步本地/91/92。
+
+### 13.7 官网存在但未注册：Qwen3.8-Omni-Flash
+
+2026-10-27 复核：官方快照已包含 `qwen3.8-omni-flash`，其能力分类为 `Multimodal-Omni`，输入为 Text/Image/Audio/Video，输出为 Text。同步脚本 `_normalize` 的 Chat/Vision 分支只识别 `TG/VU`，随后也不匹配 TR/ASR/TTS 分支，因此进入 `excluded`，理由为 `No matching Tongyi adapter for these capabilities/API`。这是本地映射覆盖不足，并非官网缺项、下线或已证实的账号权限问题；该报告理由不能作为模型无法接入的结论。
+
+[官方模型说明](https://help.aliyun.com/zh/model-studio/qwen3-8-omni-flash)明确支持北京地域、Chat Completions/Responses、1M 上下文及文本输出；[Omni 调用指南](https://help.aliyun.com/zh/model-studio/qwen-omni)使用 `reasoning_effort` 调节思考。现有 Chat/CV 路径有复用基础，但 Qwen3 通用规则仍使用 `enable_thinking`，音频路径使用原生 MultiModalConversation 和 ASR 参数，不能仅补名称就认定所有模态可用。
+
+准确范围应为“完整拉取官方元数据，按当前映射注册部分模型”。后续需按模型协议和输入/输出模态细分支持能力，补齐非实时 Omni 的 Chat/Vision 映射及请求参数测试，再单独评估音频/视频入口；`qwen3.8-omni-flash-realtime` 属于 Realtime 协议，不能与非实时版合并处理。本次仅核查并补充说明，未修改映射、注册项或线上调用行为。
