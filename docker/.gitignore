@@ -1,0 +1,13 @@
+/env/*
+!/env/.gitkeep
+/logs/
+/state/
+/backups/
+/evidence/
+/ci/.env
+/ci/ragflow-logs/
+/ci/oceanbase/conf/
+/ci/oceanbase/data/
+/ci/seekdb/
+*.tar
+*.tar.gz

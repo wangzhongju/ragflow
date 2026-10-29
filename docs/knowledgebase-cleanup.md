@@ -15,7 +15,7 @@
 | MinIO API / Console | `192.168.88.92:9000` / `:9001` |
 | Redis | `192.168.88.92:6379`，逻辑库 **DB 1** |
 | 两台服务器项目目录 | `/home/cdky/workspace/github/ragflow` |
-| 运维目录 | 项目下 `docker/split` |
+| 运维目录 | 项目下 `docker` |
 
 91 上同时运行旧实例 `ragflow-server`，网页端口 `8890`，且有旧 MySQL、MinIO、Redis、ES。**本文不操作旧实例，不使用 91 的 9000/9001/9200 等旧存储端口。**
 
@@ -68,9 +68,10 @@ ES 的 344 条记录均属于上述两个 KB：339 条 `hypergraph` 图谱记录
 **在 91 执行：**
 
 ```bash
-cd /home/cdky/workspace/github/ragflow/docker/split
-bash ops.sh app stop
-bash ops.sh app ps -a
+cd /home/cdky/workspace/github/ragflow/docker
+bash docker.sh stop app
+bash docker.sh status app
+# 92 也连接相同存储；在 92 同样停止 app，再进行备份和数据清理。
 ```
 
 确认新应用容器停止。保留旧实例运行。
@@ -81,7 +82,7 @@ bash ops.sh app ps -a
 umask 077
 APP_BACKUP="backups/pre-kb-cleanup-$(date +%Y%m%d-%H%M%S)"
 mkdir -p "$APP_BACKUP"
-cp -p app.env compose.app.yml service_conf.yaml.template "$APP_BACKUP/"
+cp -p env/app.env compose/compose.app.yml config/service_conf.yaml.template "$APP_BACKUP/"
 git rev-parse HEAD > "$APP_BACKUP/source-revision.txt"
 docker inspect --format '{{.Config.Image}} {{.Image}}' ragflow-app-ragflow-1 > "$APP_BACKUP/app-image.txt"
 ```
@@ -91,18 +92,19 @@ docker inspect --format '{{.Config.Image}} {{.Image}}' ragflow-app-ragflow-1 > "
 先对 ES 做受支持的 snapshot 备份；现有部署已配置 `ragflow_backup` 仓库。如果请求失败，先排查仓库，不继续删除。
 
 ```bash
-docker exec ragflow-storage-elasticsearch-1 sh -ec '
-  snapshot="pre-kb-cleanup-$(date +%Y%m%d-%H%M%S)"
+cd /home/cdky/workspace/github/ragflow/docker
+bash docker.sh into storage elasticsearch
+snapshot="pre-kb-cleanup-$(date +%Y%m%d-%H%M%S)"
   curl -fsS -u "elastic:$ELASTIC_PASSWORD" -X PUT \
     "http://localhost:9200/_snapshot/ragflow_backup/$snapshot?wait_for_completion=true"
-'
+exit
 ```
 
 确认返回的快照状态为 `SUCCESS`，再运行现有整套冷备份脚本：
 
 ```bash
-cd /home/cdky/workspace/github/ragflow/docker/split
-APP_STOPPED=1 bash backup.sh
+cd /home/cdky/workspace/github/ragflow/docker
+APP_STOPPED=1 APP_URLS="http://192.168.88.91:9380 http://192.168.88.92:9380" bash scripts/backup.sh
 ```
 
 脚本会停止并重新启动 **92 上本次部署的存储服务**，归档七个卷、校验 gzip 并生成 `SHA256SUMS`。记录实际输出的备份目录；应用仍应保持停止。将 91 的配置备份与这次存储备份关联保存，最好另存一份到其他磁盘/主机。已有备份会保留旧数据，这是恢复用途，不代表活动数据未清理。
@@ -112,8 +114,10 @@ APP_STOPPED=1 bash backup.sh
 在 92 打开新实例的 MySQL 交互终端：
 
 ```bash
-docker exec -it ragflow-storage-mysql-1 sh -c \
-  'MYSQL_PWD="$MYSQL_PASSWORD" exec mysql -u ragflow -D rag_flow'
+cd /home/cdky/workspace/github/ragflow/docker
+bash docker.sh into storage mysql
+MYSQL_PWD="$MYSQL_PASSWORD" exec mysql -u ragflow -D rag_flow
+exit
 ```
 
 先执行只读 SQL，复核与第 1 节一致：
@@ -169,23 +173,25 @@ SELECT COUNT(*) AS remaining_logs FROM pipeline_operation_log;
 在 92 先核对索引：
 
 ```bash
-docker exec ragflow-storage-elasticsearch-1 sh -ec '
-  curl -fsS -u "elastic:$ELASTIC_PASSWORD" \
+cd /home/cdky/workspace/github/ragflow/docker
+bash docker.sh into storage elasticsearch
+curl -fsS -u "elastic:$ELASTIC_PASSWORD" \
     "http://localhost:9200/_cat/indices/ragflow*?v&h=index,docs.count,store.size"
-'
+exit
 ```
 
 核对后执行：
 
 ```bash
-docker exec ragflow-storage-elasticsearch-1 sh -ec '
-  for index in \
+cd /home/cdky/workspace/github/ragflow/docker
+bash docker.sh into storage elasticsearch
+for index in \
     ragflow_514a9b36ce8511f18a4cdf41f1d8e4ee \
     ragflow_doc_meta_514a9b36ce8511f18a4cdf41f1d8e4ee
   do
     curl -fsS -u "elastic:$ELASTIC_PASSWORD" -X DELETE "http://localhost:9200/$index"
   done
-'
+exit
 ```
 
 每个请求应返回 `acknowledged: true`。如果以后仅删除某个 KB，而租户仍有其他 KB，就必须按 `kb_id` 对业务索引进行定向删除，不能删整个租户索引。编译历史还可能使用 KB ID 命名的独立索引，需结合实际清单识别，不能只检查一个预设索引。
@@ -195,28 +201,31 @@ docker exec ragflow-storage-elasticsearch-1 sh -ec '
 本次使用 **92 的 MinIO 容器内置 `mc`**；92 宿主机未安装 `mc`。先创建只指向该容器本机的别名：
 
 ```bash
-docker exec ragflow-storage-minio-1 sh -ec '
-  mc alias set kbcleanup http://127.0.0.1:9000 "$MINIO_ROOT_USER" "$MINIO_ROOT_PASSWORD" >/dev/null
+cd /home/cdky/workspace/github/ragflow/docker
+bash docker.sh into storage minio
+mc alias set kbcleanup http://127.0.0.1:9000 "$MINIO_ROOT_USER" "$MINIO_ROOT_PASSWORD" >/dev/null
   mc ls kbcleanup
-'
+exit
 ```
 
 先预览删除范围，`--dry-run` 不删除对象：
 
 ```bash
-docker exec ragflow-storage-minio-1 sh -ec '
-  for bucket in 5ef3b38ecea911f18a4cdf41f1d8e4ee f98bec50ce8f11f18a4cdf41f1d8e4ee imagetemps
+cd /home/cdky/workspace/github/ragflow/docker
+bash docker.sh into storage minio
+for bucket in 5ef3b38ecea911f18a4cdf41f1d8e4ee f98bec50ce8f11f18a4cdf41f1d8e4ee imagetemps
   do
     mc rm --dry-run --recursive --force --versions "kbcleanup/$bucket/"
   done
-'
+exit
 ```
 
 确认只涉及这三个桶，再执行删除对象及未完成分片上传：
 
 ```bash
-docker exec ragflow-storage-minio-1 sh -ec '
-  for bucket in 5ef3b38ecea911f18a4cdf41f1d8e4ee f98bec50ce8f11f18a4cdf41f1d8e4ee imagetemps
+cd /home/cdky/workspace/github/ragflow/docker
+bash docker.sh into storage minio
+for bucket in 5ef3b38ecea911f18a4cdf41f1d8e4ee f98bec50ce8f11f18a4cdf41f1d8e4ee imagetemps
   do
     mc rm --recursive --force --versions "kbcleanup/$bucket/"
     mc rm --incomplete --recursive --force "kbcleanup/$bucket/"
@@ -225,7 +234,7 @@ docker exec ragflow-storage-minio-1 sh -ec '
   mc rb kbcleanup/f98bec50ce8f11f18a4cdf41f1d8e4ee
   mc ls kbcleanup
   mc ls --recursive --versions kbcleanup/imagetemps
-'
+exit
 ```
 
 这三个桶盘点时均未开启版本控制；命令仍覆盖对象版本及未完成上传，以免只清掉当前可见对象。不要绕过对象锁/保留策略；若删除报错，检查错误原因后再继续。
@@ -241,13 +250,14 @@ docker exec ragflow-storage-minio-1 sh -ec '
 在 92 先列出待删 key，核对均为本次实例的任务/调试状态：
 
 ```bash
-docker exec ragflow-storage-redis-1 sh -ec '
-  export REDISCLI_AUTH="$REDIS_PASSWORD"
+cd /home/cdky/workspace/github/ragflow/docker
+bash docker.sh into storage redis
+export REDISCLI_AUTH="$REDIS_PASSWORD"
   for pattern in "doc:chunking_*" "canvas:replica:*" "*-cancel" "*-logs" "te.*.common" "task_executor_*" "TASKEXE"
   do
     redis-cli -n 1 --scan --pattern "$pattern"
   done
-'
+exit
 ```
 
 上述模式根据本次单独部署、全部 KB 重建的范围选取；如果有别的应用共用 DB 1，须改用核准的精确 key 清单。`canvas:replica:*` 是运行/调试副本，删除后丢弃旧调试状态；保存在 MySQL 的解析流程定义和版本仍保留。
@@ -255,8 +265,9 @@ docker exec ragflow-storage-redis-1 sh -ec '
 预览确认后执行：
 
 ```bash
-docker exec ragflow-storage-redis-1 sh -ec '
-  export REDISCLI_AUTH="$REDIS_PASSWORD"
+cd /home/cdky/workspace/github/ragflow/docker
+bash docker.sh into storage redis
+export REDISCLI_AUTH="$REDIS_PASSWORD"
   for pattern in "doc:chunking_*" "canvas:replica:*" "*-cancel" "*-logs" "te.*.common" "task_executor_*" "TASKEXE"
   do
     redis-cli -n 1 --scan --pattern "$pattern" |
@@ -266,7 +277,7 @@ docker exec ragflow-storage-redis-1 sh -ec '
     done
   done
   redis-cli -n 1 --scan
-'
+exit
 ```
 
 若仍有旧解析缓存，应核对其来源后追加精确 key，不能为了让 `DBSIZE=0` 而删计数器或其他系统状态。当前两个 Stream 没有 pending，9 条历史消息已经消费；这不代表历史流记录会自动消失。
@@ -285,15 +296,15 @@ docker exec ragflow-storage-redis-1 sh -ec '
 
 ```bash
 # 92
-cd /home/cdky/workspace/github/ragflow/docker/split
-bash ops.sh storage ps
+cd /home/cdky/workspace/github/ragflow/docker
+bash docker.sh status storage
 ```
 
 ```bash
 # 91
-cd /home/cdky/workspace/github/ragflow/docker/split
-bash ops.sh app start
-bash ops.sh app ps
+cd /home/cdky/workspace/github/ragflow/docker
+bash docker.sh start app
+bash docker.sh status app
 curl -fsS http://192.168.88.91:9380/api/v1/system/healthz
 ```
 

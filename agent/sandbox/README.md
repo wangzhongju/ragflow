@@ -62,7 +62,7 @@ docker build -t sandbox-executor-manager:latest ./executor_manager
 ### 📦 Running with RAGFlow
 
 1. Ensure gVisor is correctly installed.
-2. Configure your `.env` in `docker/.env`:
+2. Configure your `.env` in `docker/env/app.env`:
 
    - Uncomment sandbox-related variables.
    - Enable sandbox profile at the bottom.

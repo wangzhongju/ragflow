@@ -1,0 +1,8 @@
+{
+  "image": "ragflow-local:v0.27.2-runtime-20261029",
+  "config_digest": "sha256:3988e2c686c7b74c0cf5f42115e50158a2a7e66d19c3da7c3dd6aacf68418cca",
+  "base_image": "infiniflow/ragflow:v0.27.2",
+  "base_config_digest": "sha256:e0e1d9ec4af666710a35f3f7e1e3fe6b450b6a2cfe52851f107fc5f5967bbe8f",
+  "application_source": "host checkout bind-mounted at /ragflow",
+  "build_host": "Super-Server"
+}

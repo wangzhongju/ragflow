@@ -21,12 +21,7 @@ web/dist/
 # ── Runtime logs ────────────────────────────────────────────────────────────
 logs/
 **/*.log
-docker/ragflow-logs/
 
-# ── Docker runtime data ─────────────────────────────────────────────────────
-docker/data/
-docker/oceanbase/
-docker/seekdb/
 
 # ── Go and C++ build outputs ────────────────────────────────────────────────
 internal/binding/cpp/build/
@@ -56,12 +51,16 @@ htmlcov/
 .hypothesis/
 .nox/
 
-# ── Docker env (contains secrets) ───────────────────────────────────────────
-docker/.env
-docker/split/*.env
-docker/split/credentials.md
-docker/split/logs/
-docker/split/backups/
-docker/split/evidence/
-docker/split/*.tar
-docker/split/*.tar.gz
+# Deployment secrets and generated operational data never enter image contexts.
+docker/env/
+docker/logs/
+docker/state/
+docker/backups/
+docker/evidence/
+docker/ci/.env
+docker/ci/ragflow-logs/
+docker/ci/oceanbase/conf/
+docker/ci/oceanbase/data/
+docker/ci/seekdb/
+docker/**/*.tar
+docker/**/*.tar.gz

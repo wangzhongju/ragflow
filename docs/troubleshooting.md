@@ -77,23 +77,21 @@ Graph 任务 `5f5ddfe2cea511f18a4cdf41f1d8e4ee` 在 task 表中为 100%，日志
 
 ```bash
 ssh cdky@192.168.88.91
-cd /home/cdky/workspace/github/ragflow/docker/split
-date -Is
-bash ops.sh app ps
+cd /home/cdky/workspace/github/ragflow/docker
+bash docker.sh status app
 curl -fsS http://192.168.88.91:9380/api/v1/system/healthz
-
-# 列出最近 10 个文档，取得目标文档 ID。
-bash ops.sh app exec -T ragflow python - < inspect_task.py
-
-# 替换为实际文档 ID。下例为本次问题文件。
-DOC_ID=2bfd0516ce9011f18a4cdf41f1d8e4ee
+bash docker.sh into app
+# 以下在应用容器 /ragflow 内执行。
+python /opt/ragflow-ops/inspect_task.py
+DOC_ID=实际文档ID
 umask 077
-mkdir -p evidence
-bash ops.sh app exec -T ragflow python - --doc-id "$DOC_ID" \
-  < inspect_task.py > "evidence/task-${DOC_ID}-$(date +%Y%m%d-%H%M%S).json"
+mkdir -p logs/evidence
+python /opt/ragflow-ops/inspect_task.py --doc-id "$DOC_ID" \
+  > "logs/evidence/task-${DOC_ID}-$(date +%Y%m%d-%H%M%S).json"
+exit
 ```
 
-[inspect_task.py](../docker/split/inspect_task.py) 使用容器已有数据库凭据，以只读事务查询文档、任务、流程节点和知识库 Graph 任务，再读取 Redis 心跳、队列和轨迹 TTL。它不提交任务、不消费队列、不调用模型、不输出模型密钥或完整流程提示词。报告包含文件名和任务日志，外发前检查敏感信息。
+[inspect_task.py](../docker/scripts/inspect_task.py) 使用容器已有数据库凭据，以只读事务查询文档、任务、流程节点和知识库 Graph 任务，再读取 Redis 心跳、队列和轨迹 TTL。它不提交任务、不消费队列、不调用模型、不输出模型密钥或完整流程提示词。报告包含文件名和任务日志，外发前检查敏感信息。
 
 本部署端口绑定到 LAN IP；在 **91 宿主机**访问 `127.0.0.1:9380` 会失败，应使用上面的 LAN 地址。在容器内部才使用 `127.0.0.1:9380`。
 
@@ -145,7 +143,7 @@ ROLLBACK;
 
 ```bash
 ls -lt logs/task_executor*.log
-bash ops.sh app logs --since 30m --tail 150 ragflow
+bash docker.sh logs app --since 30m --tail 150 ragflow
 
 # 从报告 workers.name 选择当前执行器，不要只看部署前的旧日志。
 LOG=logs/task_executor_common_6be828c870c6_0.log
@@ -185,7 +183,9 @@ Linux Docker 中约 800% 表示约 8 个 CPU 核的用量。宿主机总体 CPU 
 本环境为 cgroup v2，可连续采集：
 
 ```bash
-bash ops.sh app exec -T ragflow python - <<'PY'
+cd /home/cdky/workspace/github/ragflow/docker
+bash docker.sh into app
+python - <<'PY'
 import time
 from pathlib import Path
 for i in range(2):
@@ -196,6 +196,7 @@ for i in range(2):
     if i == 0:
         time.sleep(5)
 PY
+exit
 ```
 
 `cpu.max=800000 100000` 表示 8 核配额。比较两次 `nr_throttled` 与 `nr_periods` 增量；两者接近说明多数调度周期触及限额。`throttled_usec` 可累计多个线程的等待，不能直接当作任务剩余时间。`memory.events` 中 oom/oom_kill 非零时，结合容器启动时间和日志排查内存问题。
@@ -205,7 +206,10 @@ PY
 下面使用本部署的 MinIO 配置和 `DOC_ID` 读取原文件，仅统计页数，不触发 OCR 或模型请求。文件会读入容器内存，大文件应先检查剩余内存。
 
 ```bash
-bash ops.sh app exec -T -e DOC_ID="$DOC_ID" ragflow python - <<'PY'
+cd /home/cdky/workspace/github/ragflow/docker
+bash docker.sh into app
+export DOC_ID=实际文档ID
+python - <<'PY'
 import os
 import pymysql
 import pypdfium2
@@ -238,6 +242,7 @@ try:
 finally:
     pdf.close()
 PY
+exit
 ```
 
 ## 5. 队列、缓存和存储检查
@@ -259,9 +264,9 @@ PY
 在 **92** 执行：
 
 ```bash
-cd /home/cdky/workspace/github/ragflow/docker/split
-bash ops.sh storage ps
-bash ops.sh storage logs --since 30m --tail 100 mysql redis elasticsearch minio
+cd /home/cdky/workspace/github/ragflow/docker
+bash docker.sh status storage
+bash docker.sh logs storage --since 30m --tail 100 mysql redis elasticsearch minio
 df -h / /home
 ```
 
@@ -296,7 +301,7 @@ df -h / /home
 4. 检查后续查询/检索能命中目标文档；如做模型效果测试，记录模型、参数、耗时和费用。
 5. 保存故障前后诊断 JSON、关键日志时间段、版本、配置变更及验证结果；[update.md](update.md) 只记录问题、原因、处理和结果，详细命令保留在本手册。
 
-初次只读复核截止 2026-10-23 14:20，当时仍处于 Parser；后续处理状态见下面的修复记录。证据存放在 `docker/split/evidence/`，不提交 Git。
+初次只读复核截止 2026-10-23 14:20，当时仍处于 Parser；后续处理状态见下面的修复记录。证据存放在 `docker/evidence/`，不提交 Git。
 
 ## 8. 已授权修复与单任务恢复流程
 
@@ -314,28 +319,28 @@ df -h / /home
 
 本次已完成恢复：任务 `5f5ddfe2cea511f18a4cdf41f1d8e4ee`，消息 `1792734509130-0`；恢复前 ES 有 339 条 dataset scope 实体/关系，操作日志为 0。使用补丁服务补写 1 条成功日志，`graphrag_task_finish_at=2026-10-23 13:50:26`，随后对该消息 ACK=1；未删除 Stream，也未重跑图谱计算。它仍是第二份 PDF 完成前生成的 Graph，不代表已覆盖两份文件。
 
-工具 `docker/split/finalize_graph.py` 默认只检查；`--apply` 才补日志并 ACK。它校验任务类型、任务进度、数据集引用、参与文档、近期执行器、ES 索引以及成功日志；只确认指定消息。传入一个新的私有 `--backup` 路径保存队列原文和任务信息，已有同名文件时拒绝覆盖。操作日志用数据集、类型和任务开始时间定位；不要并发运行恢复命令。
+工具 `docker/scripts/finalize_graph.py` 默认只检查；`--apply` 才补日志并 ACK。它校验任务类型、任务进度、数据集引用、参与文档、近期执行器、ES 索引以及成功日志；只确认指定消息。传入一个新的私有 `--backup` 路径保存队列原文和任务信息，已有同名文件时拒绝覆盖。操作日志用数据集、类型和任务开始时间定位；不要并发运行恢复命令。
 
 在已切换补丁镜像的 **91** 执行：
 
 ```bash
-cd /home/cdky/workspace/github/ragflow/docker/split
+cd /home/cdky/workspace/github/ragflow/docker
+bash docker.sh into app
 TASK_ID=待恢复的任务ID
 DATASET_ID=对应知识库ID
 MESSAGE_ID=该任务的精确Redis消息ID
 # 只检查：输出应确认 progress=1、有 dataset_graph_rows
-bash ops.sh app exec -T ragflow python - \
-  --task-id "$TASK_ID" --dataset-id "$DATASET_ID" --message-id "$MESSAGE_ID" \
-  < finalize_graph.py
-# 先按 install.md 第 6 节在 92 备份 MySQL，再执行单消息恢复
+python /opt/ragflow-ops/finalize_graph.py \
+  --task-id "$TASK_ID" --dataset-id "$DATASET_ID" --message-id "$MESSAGE_ID"
+# 先按 operations.html 的备份章节在 92 备份 MySQL，再执行单消息恢复
 # /ragflow/logs 为宿主持久化目录；恢复证据按 600 权限保存
-bash ops.sh app exec -T ragflow python - \
+python /opt/ragflow-ops/finalize_graph.py \
   --task-id "$TASK_ID" --dataset-id "$DATASET_ID" --message-id "$MESSAGE_ID" \
-  --apply --backup "/ragflow/logs/graph-recovery-${TASK_ID}-$(date +%s).json" \
-  < finalize_graph.py
+  --apply --backup "/ragflow/logs/graph-recovery-${TASK_ID}-$(date +%s).json"
+exit
 ```
 
-若旧执行器尚有长任务不能重启，可用补丁镜像启动**一次性维护容器**：复用 `app.env`、只读挂载当前容器生成的 `conf/service_conf.yaml`、挂载恢复脚本和私有证据目录，使用 `--entrypoint python` 运行同一脚本。不要通过入口脚本启动第二套 Worker；维护容器只调用收尾服务，没有模型调用。此次采用该方式，保留正在解析的 PDF。
+若旧执行器尚有长任务不能重启，可用补丁镜像启动**一次性维护容器**：复用 `docker/env/app.env`、只读挂载当前容器生成的 `conf/service_conf.yaml`、挂载恢复脚本和私有证据目录，使用 `--entrypoint python` 运行同一脚本。不要通过入口脚本启动第二套 Worker；维护容器只调用收尾服务，没有模型调用。此次采用该方式，保留正在解析的 PDF。
 
 任何检查失败都先停止恢复并调查，不用 SQL 强改 `progress=1` 绕过检查。ACK 成功后再次运行只读检查，应 `pending=false`、`operation_logs=1`；再核对 KB 完成时间及界面 Graph 内容。
 
@@ -355,7 +360,7 @@ bash ops.sh app exec -T ragflow python - \
 
 故障已经从“CPU 解析缓慢和显示停留”推进到独立的模型账号拒绝。`Arrearage` 响应说明服务商要求账号恢复正常账务状态；无需靠重启容器或重复提交文件验证此错误。Compiler 已产生数据不代表原文切片最终索引成功，此时开发者手册 `chunk_num=0`，不能标记处理完成。
 
-失败运行的操作日志 ID 为 `32816206ceb311f187a10f8a34a17206`，保存约 12 MiB 的运行 DSL 和各节点输出；另保存了私有日志副本 `docker/split/logs/failed-pipeline-20261023-dsl.json` 及 `backups/20261023-progress-fix/failed-pipeline-trace.json`。这些文件不提交 Git、不公开粘贴。恢复前核对文件、节点输出和编译索引，不直接清理已有结果。
+失败运行的操作日志 ID 为 `32816206ceb311f187a10f8a34a17206`，保存约 12 MiB 的运行 DSL 和各节点输出；另保存了私有日志副本 `docker/logs/failed-pipeline-20261023-dsl.json` 及 `backups/20261023-progress-fix/failed-pipeline-trace.json`。这些文件不提交 Git、不公开粘贴。恢复前核对文件、节点输出和编译索引，不直接清理已有结果。
 
 补丁已完成本地与 Python 3.13 镜像内 33 项测试；新运行环境还以临时任务实测真实 MySQL/Redis：删除日志 key 后进度为 16.6667% → 17.3333% → 22.3744% → 28.0822% → 33.3333%，所有节点完成后为 100%。临时任务不入队，验证结束清理测试行与 key，没有修改用户文档进度。
 
@@ -363,7 +368,7 @@ bash ops.sh app exec -T ragflow python - \
 
 1. 先区分错误码。401/403 排查密钥和权限；429 排查速率/配额；本次 HTTP 400 的具体业务码为 `Arrearage`，按账号状态处理，不能笼统归为网络或进度错误。
 2. 若恢复原模型服务，先做一次小输入验证，再按运行日志核对恢复位置。运行日志中的 DSL 可用于定位已完成节点，但界面的 rerun 接口会删除该文档已有索引；不能未检查就从 Indexer 重跑，否则可能同时清掉 Compiler 已写入的 Graph 数据。
-3. 用户提供了本地替代服务 `http://192.168.88.169:9502/v1/embeddings`，模型 `qwen3-text-embedding`。从 91 实测成功，返回 1024 维。页面配置见 [install.md 第 10 节](install.md#10-本地-qwen3-embedding-页面配置)。密钥仅填模型实例配置，不入文档和源码。
+3. 用户提供了本地替代服务 `http://192.168.88.169:9502/v1/embeddings`，模型 `qwen3-text-embedding`。从 91 实测成功，返回 1024 维。页面配置见 [操作手册的本地 Embedding 配置](operations.html#embedding)。密钥仅填模型实例配置，不入文档和源码。
 4. 原模型 `text-embedding-v4` 的已有向量也是 1024 维，但模型不同，不能将新旧向量混合在同一知识库。应先在新知识库验证本地模型，正式迁移须统一重建原文和编译索引，并重新生成数据集 Graph；不要直接更新数据库模型 ID 跳过页面检查。
 5. 待两个文档均 `run=3/progress=1`、索引写入完成后，再重新生成数据集 Graph，核验两份文档来源、检索、操作日志、完成时间及 pending=0。
 
@@ -468,9 +473,11 @@ ES 的 `ragflow_514a9b36ce8511f18a4cdf41f1d8e4ee` 索引按 KB 过滤：
 先按第 2 节运行现有检查工具，使用本次文档 ID：
 
 ```bash
-cd /home/cdky/workspace/github/ragflow/docker/split
-bash ops.sh app exec -T ragflow python - \
-  --doc-id 01c62d1ccebe11f184dc27e9a0ee1736 < inspect_task.py
+cd /home/cdky/workspace/github/ragflow/docker
+bash docker.sh into app
+python /opt/ragflow-ops/inspect_task.py \
+  --doc-id 01c62d1ccebe11f184dc27e9a0ee1736
+exit
 ```
 
 在 92 的 `rag_flow` 数据库执行（凭据沿用部署配置，不写入命令记录）：
@@ -508,7 +515,7 @@ GET ragflow_514a9b36ce8511f18a4cdf41f1d8e4ee/_search
 }
 ```
 
-本地私有证据位于 `docker/split/evidence/`：`current-20261024.json`（两库快照）、`local-task-20261024.json`（队列与心跳）、`models-20261024.json`（节点及本地接口检查）、`worker-summary-20261024.json`（执行日志摘要）、`hashes-91.json/92.json/container.json`、`container-tests-20261024.txt`。不包含 API Key；文件名、模型配置和运行日志仍应按内部材料管理，目录已被 Git 和 Docker 构建上下文忽略。
+本地私有证据位于 `docker/evidence/`：`current-20261024.json`（两库快照）、`local-task-20261024.json`（队列与心跳）、`models-20261024.json`（节点及本地接口检查）、`worker-summary-20261024.json`（执行日志摘要）、`hashes-91.json/92.json/container.json`、`container-tests-20261024.txt`。不包含 API Key；文件名、模型配置和运行日志仍应按内部材料管理，目录已被 Git 和 Docker 构建上下文忽略。
 
 ## 10. 现有改动相对官方 v0.27.2 的审查
 
@@ -657,7 +664,7 @@ Indexer 的向量字段配置为 `fields="text"`，故本次向量仍根据正�
 4. 配置修正后重新解析现有文档，核验 4 张图有有效描述、摘要与各块正文相关、检索分词没有错误文本、Compiler 写入非零实体/关系。重解析会清理旧切片/图片，应按已有备份和重建流程操作，不用 SQL 伪造完成状态。
 5. 最后再生成 Artifacts Graph，验收非零节点/关系、来源文档和任务完成记录；仅看 100% 不足以通过。若文档内容变化，chunk 数量可变，不把本次 25 条作为固定验收值。
 
-本轮只更新文档，不修改业务代码、不重启服务、不清空缓存、不重建知识库。私有证据位于已忽略的 `docker/split/evidence/`：`detail-20261026.json`（配置、运行 DSL、任务）、`storage-20261026.json`（原文件哈希、ES 与图片对象）、`runtime-20261026.json`（源码哈希和 Worker 错误）、`model-availability-20261026.json`（模型目录及旧模型 404）、`model-control-20261026.json`（对照模型两次 403）。凭据未写入文档或诊断脚本。
+本轮只更新文档，不修改业务代码、不重启服务、不清空缓存、不重建知识库。私有证据位于已忽略的 `docker/evidence/`：`detail-20261026.json`（配置、运行 DSL、任务）、`storage-20261026.json`（原文件哈希、ES 与图片对象）、`runtime-20261026.json`（源码哈希和 Worker 错误）、`model-availability-20261026.json`（模型目录及旧模型 404）、`model-control-20261026.json`（对照模型两次 403）。凭据未写入文档或诊断脚本。
 
 ## 12. 2026-10-26：通义模型目录更新、重新加载与付费设置
 
@@ -670,7 +677,7 @@ Indexer 的向量字段配置为 `fields="text"`，故本次向量仍根据正�
 - [延期下线公告](https://www.alibabacloud.com/en/notice/model_studio_notice_on_the_postponed_retirement_of_selected_legacy_models_7d0?_p_lc=1)：明确列出的主线及快照模型于 2026-10-10 停服，包括 `qwen3-vl-flash`。
 - [补充下线公告](https://www.alibabacloud.com/en/notice/model_studio_notice_of_retirement_for_selected_legacy_models_7d9?_p_lc=1)：补充数学、翻译、OCR、ASR、Omni、VL 等具体模型/快照的下线清单。按表格第一列的完整模型 Code 匹配，不能把推荐替代模型一并删除。
 
-将公告明确下线的名称与原目录取交集，本次移除 61 项；`Tongyi-Qianwen` 静态目录和已注册实例 `wzj_tongyi` 均由 132 项减为 71 项。完整名称、来源和新目录 SHA-256 保存在 [tongyi-catalog-20261026.json](../docker/split/tongyi-catalog-20261026.json)。没有批量增加或自动选择替代模型。
+将公告明确下线的名称与原目录取交集，本次移除 61 项；`Tongyi-Qianwen` 静态目录和已注册实例 `wzj_tongyi` 均由 132 项减为 71 项。完整名称、来源和新目录 SHA-256 保存在 [tongyi-catalog-20261026.json](../docker/manifests/tongyi-catalog-20261026.json)。没有批量增加或自动选择替代模型。
 
 同一密钥的官方 `/models` 返回 180 项，用于交叉核查，不能充当全部服务类型的下线清单。例如 `text-embedding-v4` 未出现在该接口中，但本次文档解析实际成功使用它，所以保留。`qwen3-vl-plus` 主线也保留，仅删除公告点名的两份快照。保留项不代表已逐个通过当前账号的权限、额度及生成质量验证。
 
@@ -678,13 +685,13 @@ Indexer 的向量字段配置为 `fields="text"`，故本次向量仍根据正�
 
 1. `conf/llm_factories.json`：系统支持目录，供添加实例/模型时使用；API 启动时加载到 `FACTORY_LLM_INFOS`。
 2. MySQL `tenant_model`：已注册实例的模型清单；修改 JSON 或重启本身不会清掉历史注册项。
-3. 容器内目录与进程内存：原部署把 JSON 打进镜像，宿主机改文件不会自动进入容器。本次在 `docker/split/compose.app.yml` 增加 `../../conf/llm_factories.json:/ragflow/conf/llm_factories.json:ro`，再重建新应用容器，使 API/Worker 都重新加载；镜像仍为 `ragflow-local:v0.27.2-progress-20261023`。
+3. 容器内目录与进程内存：原部署把 JSON 打进镜像，宿主机改文件不会自动进入容器。本次在 `docker/compose/compose.app.yml` 增加 `../../conf/llm_factories.json:/ragflow/conf/llm_factories.json:ro`，再重建新应用容器，使 API/Worker 都重新加载；镜像仍为 `ragflow-local:v0.27.2-progress-20261023`。
 
 ### 12.3 本次历史操作与备份
 
 2026-10-26 先确认队列空闲，再备份目录/Compose 和被删注册项，清理 61 条记录后重建新应用容器；17:12:51（UTC+8）启动，健康检查正常，已注册与支持目录接口均为 71 项。两流程的选择保持原样。此后 2026-10-27 已执行第 13 节的完整同步，当前数量以第 13 节为准。
 
-历史文件备份位于两服务器各自的 `docker/split/backups/20261026-171150-model-catalog/`；91 的 `model-rows.json` 包含当时删除的 61 条记录，权限为 0600。容器日志目录另存 `tongyi-model-rows-20261026-171150.json`。它们用于历史审计，不应直接覆盖后续用户修改。
+历史文件备份位于两服务器各自的 `docker/backups/20261026-171150-model-catalog/`；91 的 `model-rows.json` 包含当时删除的 61 条记录，权限为 0600。容器日志目录另存 `tongyi-model-rows-20261026-171150.json`。它们用于历史审计，不应直接覆盖后续用户修改。
 
 原来的只删下线项脚本已被完整同步工具替换，后续统一使用第 13 节的 `plan/apply/verify/rollback`，不再执行旧 `--manifest/--apply` 命令。当前仍为文件级绑定挂载；整工程挂载准备已按用户要求撤销。
 
@@ -703,7 +710,7 @@ Indexer 的向量字段配置为 `fields="text"`，故本次向量仍根据正�
 
 ### 13.1 来源、范围与同步规则
 
-入口为 [sync_model_catalog.py](../docker/split/sync_model_catalog.py)，在 **91 Linux 宿主机**运行；Python 3.10 标准库负责操作文件/容器，数据库和 HTTP 依赖使用现有应用容器。它替换第 12 节的单次删除工具，不需要新增整工程挂载或重打镜像。
+入口为 [sync_model_catalog.py](../docker/scripts/sync_model_catalog.py)，在 **91 Linux 宿主机**运行；Python 3.10 标准库负责操作文件/容器，数据库和 HTTP 依赖使用现有应用容器。它替换第 12 节的单次删除工具，不需要新增整工程挂载或重打镜像。
 
 官方 [查询模型列表 API](https://help.aliyun.com/zh/model-studio/list-models) 提供分页总数、模态、能力、上下文及下线信息。北京业务空间的新域名为 `https://{WorkspaceId}.cn-beijing.maas.aliyuncs.com/api/v1/models`；本部署已有的 `https://dashscope.aliyuncs.com/api/v1/models` 本次实测可用。工具只向后者发送当前北京实例密钥，并固定 `service_site=asia-pacific-china`、`supports=inference`，不筛除平台上的第三方推理供应商。其他地域或业务空间域名需要先审阅并扩展地域策略，不能直接把密钥转发到任意 URL。
 
@@ -725,7 +732,7 @@ Indexer 的向量字段配置为 `fields="text"`，故本次向量仍根据正�
 
 ### 13.2 维护策略与上线前准备
 
-[tongyi-sync-policy.json](../docker/split/tongyi-sync-policy.json) 维护以下内容：
+[tongyi-sync-policy.json](../docker/config/tongyi-sync-policy.json) 维护以下内容：
 
 - 同步服务商和地域；当前为 `Tongyi-Qianwen` / 中国部署范围。
 - 官方下线公告的来源、准确模型 Code 和生效日期。当前包含第 12 节已核实的 61 项；后续核对[模型下线公告](https://help.aliyun.com/zh/model-studio/model-depreciation)，只补入公告明确列出的名称。
@@ -744,8 +751,8 @@ python3 -m unittest test.unit_test.test_sync_model_catalog
 
 ```bash
 cd /home/cdky/workspace/github/ragflow
-run="docker/split/backups/tongyi-sync-$(date +%Y%m%d-%H%M%S)"
-python3 docker/split/sync_model_catalog.py plan \
+run="docker/backups/tongyi-sync-$(date +%Y%m%d-%H%M%S)"
+python3 docker/scripts/sync_model_catalog.py plan \
   --instance-id 79513f20d0df11f184dc27e9a0ee1736 \
   --work-dir "$run"
 ```
@@ -764,13 +771,13 @@ python3 docker/split/sync_model_catalog.py plan \
 ### 13.4 应用、重新加载与验收
 
 ```bash
-python3 docker/split/sync_model_catalog.py apply --work-dir "$run"
-python3 docker/split/sync_model_catalog.py verify --work-dir "$run"
+python3 docker/scripts/sync_model_catalog.py apply --work-dir "$run"
+python3 docker/scripts/sync_model_catalog.py verify --work-dir "$run"
 ```
 
 应用过程依次执行：检查计划未超过 24 小时、策略/目录未变化且未跨越新的下线时刻 → 检查任务空闲 → 锁定并核对指定实例原记录 → 在事务中增量新增/更新/删除 → 原子替换宿主目录文件 → 重建 **ragflow-app-ragflow-1** → 等待健康状态。数据库比较不通过即拒绝写入，避免覆盖用户在计划生成后的配置修改；不会重建整个模型实例或重置现存 ID。
 
-目录通过文件 bind mount 提供给容器。原子替换文件会产生新 inode，所以工具使用 `ops.sh app up -d --force-recreate --pull never` 重新绑定并加载，而非只修改宿主文件或仅重启进程。无任何变化时不重建。91 的旧应用和 92 存储不参与重启。
+工程目录整体 bind mount 到容器，原子替换目录中的文件可直接被容器看到；工具使用 `docker/docker.sh restart app` 重新加载 API/Worker 的内存目录。无任何变化时不重建。91 的旧应用和 92 存储不参与重启。
 
 `verify` 核对数据库、宿主文件、容器挂载文件和应用健康状态。页面刷新后可在模型管理中查看新增项；用已登录会话检查两接口：
 
@@ -796,15 +803,15 @@ scp conf/llm_factories.json cdky@192.168.88.92:/home/cdky/workspace/github/ragfl
 数据库事务、宿主文件替换、容器重建不是一个跨系统事务。任一步骤失败都保留备份，`operation.json` 标记已执行阶段；不要反复尝试覆盖异常状态。可先检查错误，或在同一工作目录执行：
 
 ```bash
-python3 docker/split/sync_model_catalog.py rollback --work-dir "$run"
-python3 docker/split/sync_model_catalog.py verify --work-dir "$run"
+python3 docker/scripts/sync_model_catalog.py rollback --work-dir "$run"
+python3 docker/scripts/sync_model_catalog.py verify --work-dir "$run"
 ```
 
 回退仅接受原/目标两种已知状态；若用户之后改过模型行或目录，会拒绝覆盖。成功回退恢复原记录及原目录并重新加载，`verify` 自动验收同步前版本。重复回退仍会重新加载，确保上次加载失败后可恢复容器挂载。回退后也同步本地/92 副本。恢复目录不会让阿里云已停服的模型恢复调用。此次回退逻辑通过离线模拟测试验证，未为演练而回退线上已同步数据。
 
 ### 13.6 本次实际结果
 
-- 时间：2026-10-27；新容器启动于 09:38:55（UTC+8），健康检查通过。工作目录为 91 的 `docker/split/backups/tongyi-sync-20261027/`。
+- 时间：2026-10-27；新容器启动于 09:38:55（UTC+8），健康检查通过。工作目录为 91 的 `docker/backups/tongyi-sync-20261027/`。
 - 官网快照 **359 项**；按现有适配器映射 **159 项**，另保留 **15 项待复核旧条目**，最终目录/实例 **71 → 174 项**。新增 103 项，静态元数据更新 56 项，实际数据库更新 48 行，删除 0 项。200 个官网条目没有自动生成适配目录项，其中 12 项作为已有待复核条目保留；另外 3 个保留项未在官网快照中出现。
 - 新增 `qwen3.8-flash` 等模型；页面 API 实测返回 Chat/Vision、上下文 1,000,000、工具调用/思考标记及 `verify=unknown`，两目录接口均为 HTTP 200、业务码 0、174 项。旧 `qwen3-vl-flash` 未被重新加入。
 - 待复核旧条目包括部分实时语音、Omni、翻译模型，以及未在该快照出现的 `kimi/kimi-k2.5`、两个 DeepSeek-Llama 蒸馏模型。它们不属于已通过本轮适配/权限验收的新项；详细原因见报告。

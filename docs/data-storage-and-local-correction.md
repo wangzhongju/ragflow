@@ -110,7 +110,7 @@ $uri = "$base/datasets/$kb/documents/$doc/chunks/$chunk"
 curl.exe --fail-with-body -sS -X PATCH $uri `
   -H "Authorization: Bearer $env:RAGFLOW_TOKEN" `
   -H 'Content-Type: application/json' `
-  --data-binary '@docker/split/evidence/t4-chunk-patch.json'
+  --data-binary '@docker/evidence/t4-chunk-patch.json'
 ```
 
 该 UTF-8 请求文件已经准备好，内容只有 `{"content":"图1. 古力娜扎"}`，尚未提交。手工创建时使用 UTF-8。
@@ -124,9 +124,9 @@ curl.exe --fail-with-body -sS -X PATCH $uri `
 
 ### 5.1 备份与准备
 
-- 备份本文件所有 63 条 ES 行、关联 MySQL 文档/任务/运行 DSL。此次只读原始快照已保存在本地忽略目录 `docker/split/evidence/t4-snapshot.json`，含向量；进一步的原文件/代码/mapping 核验在 `t4-details.json`。执行前应重新取快照，不能用旧快照覆盖之后的用户修改。
+- 备份本文件所有 63 条 ES 行、关联 MySQL 文档/任务/运行 DSL。此次只读原始快照已保存在本地忽略目录 `docker/evidence/t4-snapshot.json`，含向量；进一步的原文件/代码/mapping 核验在 `t4-details.json`。执行前应重新取快照，不能用旧快照覆盖之后的用户修改。
 - 确认文档空闲。保存上游结果不改原始 DOCX：MinIO 原文件中仍有一次旧姓名，直接从 File 再解析会恢复旧题注。应另行维护修正后的源文件版本，避免未来重解析覆盖人工修正。
-- 本次已根据现场日志生成 `docker/split/evidence/t4-rerun-request.json`，仅作为待审阅请求体，未提交。其修改范围见下表。
+- 本次已根据现场日志生成 `docker/evidence/t4-rerun-request.json`，仅作为待审阅请求体，未提交。其修改范围见下表。
 
 | 请求体内位置 | 修正 |
 | --- | --- |
@@ -150,7 +150,7 @@ $log = 'a9fc07aed1ac11f1a42b59051324d298'
 if (-not $env:RAGFLOW_TOKEN) { throw '请先设置 RAGFLOW_TOKEN' }
 curl.exe --fail-with-body -sS "$base/datasets/$kb/ingestions/$log" `
   -H "Authorization: Bearer $env:RAGFLOW_TOKEN" `
-  -o docker/split/evidence/t4-current-log.json
+  -o docker/evidence/t4-current-log.json
 ```
 
 确认响应业务码为 0、文档 ID 相符，且 `data.dsl` 与 `t4-snapshot.json` 中该日志的原 DSL 语义一致；同时确认没有更新的解析记录或并发修改。若发生变化，应从最新日志重做上表修正，不能直接提交旧请求体。本次接口没有提供乐观版本冲突检查，维护窗口内完成备份、核对和提交。
@@ -161,7 +161,7 @@ curl.exe --fail-with-body -sS "$base/datasets/$kb/ingestions/$log" `
 curl.exe --fail-with-body -sS -X POST "$base/agents/rerun" `
   -H "Authorization: Bearer $env:RAGFLOW_TOKEN" `
   -H 'Content-Type: application/json' `
-  --data-binary '@docker/split/evidence/t4-rerun-request.json'
+  --data-binary '@docker/evidence/t4-rerun-request.json'
 ```
 
 请求成功只代表排队成功。该接口会先删除目标文档原 ES 数据再运行，不提供在线原子切换；不得截取单个 chunk 作为 `chunks` 列表提交，否则其他 24 块会丢失。不要选择 Tokenizer 为起点：它已经是最后节点，不能因此重新执行 Compiler；也不要选择 Compiler 为起点期待它重算，因为选中节点本身会被跳过。

@@ -8,13 +8,13 @@ TSR (Table Structure Recognition) models via a unified HTTP API using
 
 ```bash
 # Build
-docker build -f Dockerfile_deepdoc_oss -t deepdoc_oss:latest .
+docker build -f docker/Dockerfile.deepdoc -t deepdoc_oss:latest .
 
 # Run (CPU only; no GPU required)
 docker run -p 9390:9390 deepdoc_oss:latest
 
 # Or via docker compose
-docker compose -f docker/docker-compose.yml up -d
+docker compose -f docker/ci/compose.python.yml up -d
 ```
 
 The service listens on port **9390** by default. Pass `--port` to change it:

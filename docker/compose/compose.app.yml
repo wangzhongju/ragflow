@@ -1,0 +1,53 @@
+name: ragflow-app
+
+services:
+  ragflow:
+    image: ${RAGFLOW_IMAGE:?Set RAGFLOW_IMAGE}
+    restart: unless-stopped
+    entrypoint: [bash, /ragflow/docker/runtime/entrypoint-mounted.sh]
+    command: [--enable-adminserver, --init-model-provider-tables]
+    env_file: ${RAGFLOW_ENV_DIR:-../env}/app.env
+    ports:
+      - "${APP_IP:?Set APP_IP}:${APP_WEB_PORT:-8088}:80"
+      - "${APP_IP}:${APP_API_PORT:-9380}:9380"
+      - "${APP_IP}:${APP_ADMIN_PORT:-9381}:9381"
+    volumes:
+      - ../..:/ragflow
+      - ../logs:/ragflow/logs
+      - ../config/service_conf.yaml.template:/ragflow/conf/service_conf.yaml.template:ro
+      - ../state/service_conf.yaml:/ragflow/conf/service_conf.yaml
+      - ../scripts:/opt/ragflow-ops:ro
+      - python_env:/ragflow/.venv:ro
+      - deepdoc_models:/ragflow/rag/res/deepdoc:ro
+      - ${APP_WEB_DIST:-web_assets}:/ragflow/web/dist:ro
+      - native_bin:/ragflow/bin:ro
+    mem_limit: ${APP_MEM_LIMIT:-8g}
+    mem_reservation: ${APP_MEM_RESERVATION:-2g}
+    memswap_limit: ${APP_MEM_LIMIT:-8g}
+    cpu_quota: -1
+    cpu_shares: 512
+    ulimits:
+      nofile:
+        soft: 65535
+        hard: 65535
+    logging:
+      driver: json-file
+      options:
+        max-size: "20m"
+        max-file: "5"
+    healthcheck:
+      test: [CMD, curl, -fsS, 'http://127.0.0.1:9380/api/v1/system/healthz']
+      interval: 30s
+      timeout: 15s
+      retries: 10
+      start_period: 180s
+
+volumes:
+  python_env:
+    name: ragflow-app_python_${RAGFLOW_RUNTIME_KEY:-unprepared}
+  deepdoc_models:
+    name: ragflow-app_models_${RAGFLOW_RUNTIME_KEY:-unprepared}
+  web_assets:
+    name: ragflow-app_web_${RAGFLOW_RUNTIME_KEY:-unprepared}
+  native_bin:
+    name: ragflow-app_bin_${RAGFLOW_RUNTIME_KEY:-unprepared}

@@ -1,0 +1,37 @@
+{
+  "date": "2026-10-29",
+  "application_source": "host checkout bind-mounted at /ragflow",
+  "hosts": {
+    "192.168.88.91": {
+      "runtime_image": "ragflow-local:v0.27.2-runtime-20261029",
+      "image_id": "sha256:3988e2c686c7b74c0cf5f42115e50158a2a7e66d19c3da7c3dd6aacf68418cca",
+      "app_memory_limit": "48g"
+    },
+    "192.168.88.92": {
+      "runtime_image": "ragflow-local:v0.27.2-runtime-20261029",
+      "image_id": "sha256:d10d57a97074600aeefd8696194a22c6ff8cacb6322e9435a979805e8d52b413",
+      "app_memory_limit": "6g"
+    }
+  },
+  "checks": {
+    "cli_unit_tests": 11,
+    "model_catalog_unit_tests": 19,
+    "configuration_contracts": 3,
+    "ci_compose_configurations": 4,
+    "web_and_api_health": "HTTP 200 on both hosts",
+    "source_mount": "bidirectional checks on both hosts",
+    "storage_probe": "MySQL, Redis Stream, ES KNN, MinIO; restart/recreate persistence; probes cleaned",
+    "protected_91_containers": "5 unchanged IDs, start times, mounts and restart counts",
+    "storage_92_volumes": "7 unchanged identities",
+    "business_counts": {
+      "datasets": 5,
+      "documents": 5,
+      "unfinished_tasks": 0
+    }
+  },
+  "not_performed": [
+    "full dependency image rebuild",
+    "large-document load test",
+    "full disaster recovery rehearsal"
+  ]
+}

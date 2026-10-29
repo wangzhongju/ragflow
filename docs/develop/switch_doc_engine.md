@@ -7,32 +7,8 @@ sidebar_custom_props: {
   categoryIcon: LucideShuffle
 }
 ---
-# Switch Document Engine
+# Document engine selection
 
-Switch your doc engine from Elasticsearch to Infinity.
+The deployed 91/92 environment uses Elasticsearch. Changing the engine requires a reviewed data migration or reindexing plan; changing `DOC_ENGINE` alone does not move existing vectors or indexes. Do not delete existing storage volumes to switch engines.
 
----
-
-RAGFlow uses Elasticsearch by default for storing full text and vectors. To switch to [Infinity](https://github.com/infiniflow/infinity/), follow these steps:
-
-:::caution WARNING
-Switching to Infinity on a Linux/arm64 machine is not yet officially supported.
-:::
-
-1. Stop all running containers:
-
-   ```bash
-   $ docker compose -f docker/docker-compose.yml down -v
-   ```
-
-:::caution WARNING
-`-v` will delete the docker container volumes, and the existing data will be cleared.
-:::
-
-2. Set `DOC_ENGINE` in **docker/.env** to `infinity`.
-
-3. Start the containers:
-
-   ```bash
-   $ docker compose -f docker-compose.yml up -d
-   ```
+The CI multi-backend definitions remain in `docker/ci/compose.base.yml`, with defaults in `docker/ci/env.example`. They test Elasticsearch, Infinity and other backends independently of the business deployment. For production configuration and backups, use the [operations manual](../operations.html).

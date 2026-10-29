@@ -186,7 +186,7 @@ WORKER_HEARTBEAT_TIMEOUT = int(os.environ.get("WORKER_HEARTBEAT_TIMEOUT", "120")
 # Recycle the worker process after this many completed tasks to release memory
 # that long-lived libraries cannot reclaim on their own -- notably ONNX
 # Runtime's BFCArena, which holds every chunk it allocates until the
-# InferenceSession is destroyed. The supervisor loop in `docker/entrypoint.sh`
+# InferenceSession is destroyed. The supervisor loop in `docker/runtime/entrypoint.sh`
 # (`while true; do ... task_executor.py & wait; sleep 1; done`) restarts the
 # process automatically after a clean exit.
 # 0 disables recycling and preserves the existing behaviour. A small value such

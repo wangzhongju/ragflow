@@ -11,7 +11,7 @@ sidebar_custom_props: {
 # Knowledge Compilation Runtime Configuration
 
 Knowledge compilation runtime parameters can be configured with environment
-variables. In the Docker deployment, set them in `docker/.env` and restart the
+variables. In the Docker deployment, set them in `docker/env/app.env` and restart the
 RAGFlow service for the changes to take effect.
 
 The values below are the defaults. If an environment variable is not set, its
@@ -89,6 +89,6 @@ LLM_POOL_RATE_LIMIT_RETRIES=5
 WIKI_MAP_TIMEOUT=300
 ```
 
-Restart the RAGFlow backend after changing `docker/.env`. The settings are
+Restart the RAGFlow backend after changing `docker/env/app.env`. The settings are
 read when the Python modules are loaded and are not changed for already-running
 tasks.

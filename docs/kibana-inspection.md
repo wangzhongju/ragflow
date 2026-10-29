@@ -5,7 +5,7 @@
 ## 1. 登录和选择入口
 
 - 地址：<http://192.168.88.92:5601>。
-- 用户名：`elastic`；密码取 92 的 `/home/cdky/workspace/github/ragflow/docker/split/storage.env` 中 `ELASTIC_PASSWORD`，不是 Linux 登录密码。`kibana_system` 是服务内部连接账号，不用于人工登录。
+- 用户名：`elastic`；密码取 92 的 `/home/cdky/workspace/github/ragflow/docker/env/storage.env` 中 `ELASTIC_PASSWORD`，不是 Linux 登录密码。`kibana_system` 是服务内部连接账号，不用于人工登录。
 - 精确查询使用 **Dev Tools → Console**。粘贴下面请求，把光标放在该请求内，点击运行按钮或按 Ctrl+Enter。这里的 GET/POST 查询均为读取，不会调用 Embedding/LLM。
 - 表格浏览使用 **Discover**，配置见第 7 节。
 

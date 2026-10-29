@@ -40,7 +40,7 @@ RAGFLOW_IMAGE=infiniflow/ragflow:v0.27.2 #Replace with the image you are using
 **Start the container（wait two minutes）:**
 
 ```bash
-docker compose -f docker/docker-compose.yml up -d
+docker compose -f docker/ci/compose.python.yml up -d
 
 ```
 
@@ -78,8 +78,8 @@ DOC_ENGINE=${DOC_ENGINE:-infinity}
 **Start the container:**
 
 ```bash
-docker compose -f docker/docker-compose.yml down -v
-docker compose -f docker/docker-compose.yml up -d
+docker compose -f docker/ci/compose.python.yml down -v
+docker compose -f docker/ci/compose.python.yml up -d
 
 ```
 

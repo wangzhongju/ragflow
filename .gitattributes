@@ -1,5 +1,5 @@
 *.sh text eol=lf
-docker/entrypoint.sh text eol=lf executable
+docker/runtime/entrypoint.sh text eol=lf executable
 
 # Binary fixtures must be stored byte-for-byte. Mark them binary so git
 # never applies text/CRLF normalization, and so the pre-commit text fixers
@@ -7,3 +7,7 @@ docker/entrypoint.sh text eol=lf executable
 # were previously corrupted by the mixed-line-ending / end-of-file fixers.
 *.msg binary
 
+
+# Deployment scripts are copied directly from Windows to Linux.
+docker/**/*.yml text eol=lf
+docker/Dockerfile* text eol=lf

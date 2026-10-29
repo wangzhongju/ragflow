@@ -32,7 +32,7 @@ This guide will help you install and configure the Firecrawl integration plugin 
 4. **Restart RAGFlow**:
    ```bash
    # Restart RAGFlow services
-   docker compose -f /opt/ragflow/docker/docker-compose.yml restart
+   docker compose -f /opt/ragflow/docker/ci/compose.python.yml restart
    ```
 
 ### Method 2: Using pip (if available)
@@ -194,7 +194,7 @@ To remove the plugin:
 
 2. **Restart RAGFlow**:
    ```bash
-   docker compose -f /opt/ragflow/docker/docker-compose.yml restart
+   docker compose -f /opt/ragflow/docker/ci/compose.python.yml restart
    ```
 
 3. **Remove dependencies** (optional):

@@ -149,11 +149,7 @@ When debugging your chat assistant, you can use AI search as a reference to veri
 
 ### Get a `Request error 404: undefined` when upgrading to v0.27.2
 
-To resolve this issue, do either of the following:
-
-- Pull the latest source code from the [main branch](https://github.com/infiniflow/ragflow), then pull and start the v0.27.2 image.
-- Update `RAGFLOW_IMAGE` from `infiniflow/ragflow:latest` to `infiniflow/ragflow:v0.27.2` in the [.env file](https://github.com/infiniflow/ragflow/blob/main/docker/.env), then restart the service.
-
+For this checkout, use [the operations manual](operations.html) for image/configuration changes and container operations, and [task troubleshooting](troubleshooting.md) for parsing and queue diagnostics. Applications use a mounted checkout; changes to env or mounts require `bash docker/docker.sh recreate app`.
 ### How to build the RAGFlow image from scratch?
 
 See [Build a RAGFlow Docker image](./develop/build_docker_image.mdx).
@@ -162,35 +158,7 @@ See [Build a RAGFlow Docker image](./develop/build_docker_image.mdx).
 
 ### Cannot access https://huggingface.co
 
-A locally deployed RAGFlow downloads OCR models from [Huggingface website](https://huggingface.co) by default. If your machine is unable to access this site, the following error occurs and PDF parsing fails:
-
-```
-FileNotFoundError: [Errno 2] No such file or directory: '/root/.cache/huggingface/hub/models--InfiniFlow--deepdoc/snapshots/be0c1e50eef6047b412d1800aa89aba4d275f997/ocr.res'
-```
-
-To fix this issue, use https://hf-mirror.com instead:
-
-1. Stop all containers and remove all related resources:
-
-   ```bash
-   cd ragflow/docker/
-   docker compose down
-   ```
-
-2. Uncomment the following line in **ragflow/docker/.env**:
-
-   ```
-   # HF_ENDPOINT=https://hf-mirror.com
-   ```
-
-3. Start up the server:
-
-   ```bash
-   docker compose up -d
-   ```
-
----
-
+For this checkout, use [the operations manual](operations.html) for image/configuration changes and container operations, and [task troubleshooting](troubleshooting.md) for parsing and queue diagnostics. Applications use a mounted checkout; changes to env or mounts require `bash docker/docker.sh recreate app`.
 ### `Fail to access model(Ollama/xxxxx)`
 
 Ollama may time out or fail during its first model load due to memory constraints or out-of-memory (OOM). It is best to test your local model in isolation first. If sharing hardware with other services, memory exhaustion is likely. To resolve this, switch to a smaller model or increase RAM.
@@ -199,17 +167,7 @@ Ollama may time out or fail during its first model load due to memory constraint
 
 ### `MaxRetryError: HTTPSConnectionPool(host='hf-mirror.com', port=443)`
 
-This error suggests that you do not have Internet access or are unable to connect to hf-mirror.com. Try the following:
-
-1. Manually download the resource files from [huggingface.co/InfiniFlow/deepdoc](https://huggingface.co/InfiniFlow/deepdoc) to your local folder **~/deepdoc**.
-2. Add a volumes to **docker-compose.yml**, for example:
-
-   ```
-   - ~/deepdoc:/ragflow/rag/res/deepdoc
-   ```
-
----
-
+For this checkout, use [the operations manual](operations.html) for image/configuration changes and container operations, and [task troubleshooting](troubleshooting.md) for parsing and queue diagnostics. Applications use a mounted checkout; changes to env or mounts require `bash docker/docker.sh recreate app`.
 ### `RuntimeError: Unable to start Tika server.`
 
 This error is almost always caused by Java not being installed or not accessible in the environment. See [here](https://github.com/infiniflow/ragflow/issues/13194) for detailed instructions.
@@ -218,12 +176,7 @@ This error is almost always caused by Java not being installed or not accessible
 
 ### `Cannot stat '/etc/nginx/conf.d/ragflow.conf.python': No such file or directory`
 
-To resolve this, either download the missing file from the corresponding tag on [GitHub](https://github.com/infiniflow/ragflow) or update `~/ragflow/docker/docker-compose.yml` as follows:
-
-![](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/docker-compose_missing.jpg)
-
----
-
+For this checkout, use [the operations manual](operations.html) for image/configuration changes and container operations, and [task troubleshooting](troubleshooting.md) for parsing and queue diagnostics. Applications use a mounted checkout; changes to env or mounts require `bash docker/docker.sh recreate app`.
 ### `WARNING: can't find /ragflow/rag/res/borker.tm`
 
 Ignore this warning and continue. All system warnings can be ignored.
@@ -265,70 +218,10 @@ Ignore this warning and continue. All system warnings can be ignored.
 
 ### For RAGFlow versions earlier than v0.26.0
 
-1. Clear the Redis task queue:
-
-```bash
-$ docker exec -it ragflow-redis /bin/bash
-# In container
-$ redis-cli -a infini_rag_flow
-# In redis-cli
-select 1
-XGROUP DESTROY rag_flow_svr_queue rag_flow_svr_task_broker
-XGROUP CREATE rag_flow_svr_queue rag_flow_svr_task_broker $ MKSTREAM
-# When CREATE raises and error:
-FLUSHDB
-```
-
-2. If the parser remains stuck at 0%, restart the RAGFlow containers using one of the following methods:
-
-```bash
-# Option 1: Restart specific container
-docekr restart docker-redis-1 docker-ragflow-cpu-1
-
-# Option 2: Recreate containers via Docker Compose
-docker compose -f docker/docker-compose.yml down
-docker compose -f docker/docker-compose.yml up -d
-
-# Option 3: Reset all Docker containers
-# WARNING: Run this ONLY if your environment contains no other non-RAGFlow containers.
-docker stop $(docker ps -aq)
-docker rm $(docker ps -aq)
-```
-
+For this checkout, use [the operations manual](operations.html) for image/configuration changes and container operations, and [task troubleshooting](troubleshooting.md) for parsing and queue diagnostics. Applications use a mounted checkout; changes to env or mounts require `bash docker/docker.sh recreate app`.
 ### For RAGFlow v0.26.0 and later
 
-1. Clear the Redis task queue:
-
-```bash
-$ docker exec -it ragflow-redis /bin/bash
-# In container
-$ redis-cli -a infini_rag_flow
-# In redis-cli
-select 1
-XGROUP DESTROY te.0.common_queue te.0.common_task_broker
-XGROUP CREATE te.0.common_queue te.0.common_task_broker $ MKSTREAM
-# When CREATE raises and error:
-FLUSHDB
-```
-
-2. If the parser remains stuck at 0%, restart the RAGFlow containers using one of the following methods:
-
-```bash
-# Option 1: Restart specific container
-docekr restart docker-redis-1 docker-ragflow-cpu-1
-
-# Option 2: Recreate containers via Docker Compose
-docker compose -f docker/docker-compose.yml down
-docker compose -f docker/docker-compose.yml up -d
-
-# Option 3: Reset all Docker containers
-# WARNING: Run this ONLY if your environment contains no other non-RAGFlow containers.
-docker stop $(docker ps -aq)
-docker rm $(docker ps -aq)
-```
-
----
-
+For this checkout, use [the operations manual](operations.html) for image/configuration changes and container operations, and [task troubleshooting](troubleshooting.md) for parsing and queue diagnostics. Applications use a mounted checkout; changes to env or mounts require `bash docker/docker.sh recreate app`.
 ### Why does my document parsing stall at under one percent?
 
 ![stall](https://github.com/infiniflow/ragflow/assets/93570324/3589cc25-c733-47d5-bbfc-fedb74a3da50)
@@ -348,25 +241,7 @@ Click the red cross beside the 'parsing status' bar, then restart the parsing pr
 
 ### Why does my pdf parsing stall near completion, while the log does not show any error?
 
-Click the red cross beside the 'parsing status' bar, then restart the parsing process to see if the issue remains. If the issue persists and your RAGFlow is deployed locally, the parsing process is likely killed due to insufficient RAM. Try increasing your memory allocation by increasing the `MEM_LIMIT` value in **docker/.env**.
-
-:::note
-Ensure that you restart up your RAGFlow server for your changes to take effect!
-
-```bash
-docker compose stop
-```
-
-```bash
-docker compose up -d
-```
-
-:::
-
-![nearcompletion](https://github.com/infiniflow/ragflow/assets/93570324/563974c3-f8bb-4ec8-b241-adcda8929cbb)
-
----
-
+For this checkout, use [the operations manual](operations.html) for image/configuration changes and container operations, and [task troubleshooting](troubleshooting.md) for parsing and queue diagnostics. Applications use a mounted checkout; changes to env or mounts require `bash docker/docker.sh recreate app`.
 ### `Index failure`
 
 An index failure usually indicates an unavailable Elasticsearch service.
@@ -555,17 +430,7 @@ See [here](./guides/models/deploy_local_llm.mdx) for more information.
 
 ### How to change the file size limit?
 
-For a locally deployed RAGFlow: the total file size limit per upload is 1GB, with a batch upload limit of 32 files. There is no cap on the total number of files per account. To update this 1GB file size limit:
-
-- In **docker/.env**, uncomment `# MAX_CONTENT_LENGTH=1073741824`, adjust the value as needed, and note that `1073741824` represents 1GB in bytes.
-- If you update the value of `MAX_CONTENT_LENGTH` in **docker/.env**, ensure that you update `client_max_body_size` in **nginx/nginx.conf** accordingly.
-
-:::tip NOTE
-It is not recommended to manually change the 32-file batch upload limit. However, if you use RAGFlow's HTTP API or Python SDK to upload files, the 32-file batch upload limit is automatically removed.
-:::
-
----
-
+For this checkout, use [the operations manual](operations.html) for image/configuration changes and container operations, and [task troubleshooting](troubleshooting.md) for parsing and queue diagnostics. Applications use a mounted checkout; changes to env or mounts require `bash docker/docker.sh recreate app`.
 ### `Error: Range of input length should be [1, 30000]`
 
 This error occurs because there are too many chunks matching your search criteria. Try reducing the **TopN** and increasing **Similarity threshold** to fix this issue:
@@ -593,26 +458,7 @@ See [Upgrade RAGFlow](./administrator/upgrade_ragflow.mdx) for more information.
 
 ### How to switch the document engine to Infinity?
 
-To switch your document engine from Elasticsearch to [Infinity](https://github.com/infiniflow/infinity):
-
-1. Stop all running containers:
-
-   ```bash
-   $ docker compose -f docker/docker-compose.yml down -v
-   ```
-   :::caution WARNING
-   `-v` will delete all Docker container volumes, and the existing data will be cleared.
-   :::
-
-2. In **docker/.env**, set `DOC_ENGINE=${DOC_ENGINE:-infinity}`
-3. Restart your Docker image:
-
-   ```bash
-   $ docker compose -f docker-compose.yml up -d
-   ```
-
----
-
+For this checkout, use [the operations manual](operations.html) for image/configuration changes and container operations, and [task troubleshooting](troubleshooting.md) for parsing and queue diagnostics. Applications use a mounted checkout; changes to env or mounts require `bash docker/docker.sh recreate app`.
 ### Where are my uploaded files stored in RAGFlow's image?
 
 All uploaded files are stored in Minio, RAGFlow's object storage solution. For instance, if you upload your file directly to a dataset, it is located at `<knowledgebase_id>/filename`.
@@ -712,21 +558,7 @@ For information about other environment variables natively supported by MinerU, 
 
 ### How to use MinerU with a vLLM server for document parsing?
 
-RAGFlow supports MinerU's `vlm-http-client` and `hybrid-http-client` backends, enabling you to delegate document parsing tasks to a remote OpenAI-compatible server (for example vLLM) while calling MinerU via HTTP. To configure:
-
-1. Ensure a MinerU API service is reachable (for example `http://mineru-host:8886`).
-2. Set up or point to an OpenAI-compatible HTTP server (for example `http://vllm-host:30000`).
-3. Configure the following in your **docker/.env** file (or your shell if running from source):
-   - `MINERU_APISERVER=http://mineru-host:8886`
-   - `MINERU_BACKEND="vlm-http-client"` (or `"hybrid-http-client"`)
-   - `MINERU_SERVER_URL="http://vllm-host:30000"`
-   MinerU API calls expect `backend=vlm-http-client` (or `hybrid-http-client`) and `server_url=http://<server>:30000` in the request body.
-4. Configure `MINERU_OUTPUT_DIR` / `MINERU_DELETE_OUTPUT` as desired to manage the returned zip/JSON before ingestion.
-
-:::tip NOTE
-When using an `*-http-client` backend, the RAGFlow server requires no GPU, only network connectivity. This enables cost-effective distributed deployment with multiple RAGFlow instances sharing one remote inference server.
-:::
-
+For this checkout, use [the operations manual](operations.html) for image/configuration changes and container operations, and [task troubleshooting](troubleshooting.md) for parsing and queue diagnostics. Applications use a mounted checkout; changes to env or mounts require `bash docker/docker.sh recreate app`.
 ### How to use an external Docling Serve server for document parsing?
 
 RAGFlow supports Docling in two modes:
@@ -747,84 +579,7 @@ Behavior:
 
 ### How to use PaddleOCR for document parsing?
 
-From v0.24.0 onwards, RAGFlow includes PaddleOCR as an optional PDF parser. Please note that RAGFlow acts only as a *remote client* for PaddleOCR, calling the PaddleOCR API to parse PDFs and reading the returned files.
-
-There are two main ways to configure and use PaddleOCR in RAGFlow:
-
-#### 1. Using PaddleOCR Official API
-
-This method uses PaddleOCR's official API service with an access token.
-
-**Step 1: Configure RAGFlow**
-- **Via Environment Variables:**
-   ```bash
-   # In your docker/.env file:
-   PADDLEOCR_API_URL=https://your-paddleocr-api-endpoint
-   PADDLEOCR_ALGORITHM=PaddleOCR-VL
-   PADDLEOCR_ACCESS_TOKEN=your-access-token-here
-   ```
-
-- **Via UI:**
-   - Navigate to **Model providers** page
-   - Add a new OCR model with factory type "PaddleOCR"
-   - Configure the following fields:
-      - **PaddleOCR API URL**: Your PaddleOCR API endpoint
-      - **PaddleOCR Algorithm**: Select the algorithm corresponding to the API endpoint
-      - **AI Studio Access Token**: Your access token for the PaddleOCR API
-
-**Step 2: Usage in Dataset Configuration**
-- In your dataset's **Configuration** page, find the **Ingestion pipeline** section
-- If using built-in chunking methods that support PDF parsing, select **PaddleOCR** from the **PDF parser** dropdown
-- If using custom ingestion pipeline, select **PaddleOCR** in the **Parser** component
-
-**Notes:**
-- To obtain the API URL, visit the [PaddleOCR official website](https://aistudio.baidu.com/paddleocr), click the **API** button, choose the example code for the specific algorithm you want to use (e.g., PaddleOCR-VL), and copy the `API_URL`.
-- Access tokens can be obtained from the [AI Studio platform](https://aistudio.baidu.com/account/accessToken).
-- This method requires internet connectivity to reach the official PaddleOCR API.
-
-#### 2. Using Self-Hosted PaddleOCR Service
-
-This method allows you to deploy your own PaddleOCR service and use it without an access token.
-
-**Step 1: Deploy PaddleOCR Service**
-Follow the [PaddleOCR serving documentation](https://www.paddleocr.ai/latest/en/version3.x/inference_deployment/serving/serving.html) to deploy your own service. For layout parsing, you can use an endpoint like:
-
-```bash
-http://localhost:8080/layout-parsing
-```
-
-**Step 2: Configure RAGFlow**
-- **Via Environment Variables:**
-  ```bash
-  PADDLEOCR_API_URL=http://localhost:8080/layout-parsing
-  PADDLEOCR_ALGORITHM=PaddleOCR-VL
-  # No access token required for self-hosted service
-  ```
-
-- **Via UI:**
-   - Navigate to **Model providers** page
-   - Add a new OCR model with factory type "PaddleOCR"
-   - Configure the following fields:
-      - **PaddleOCR API URL**: The endpoint of your deployed service
-      - **PaddleOCR Algorithm**: Select the algorithm corresponding to the deployed service
-      - **AI Studio Access Token**: Leave empty
-
-**Step 3: Usage in Dataset Configuration**
-- In your dataset's **Configuration** page, find the **Ingestion pipeline** section
-- If using built-in chunking methods that support PDF parsing, select **PaddleOCR** from the **PDF parser** dropdown
-- If using custom ingestion pipeline, select **PaddleOCR** in the **Parser** component
-
-#### Environment Variables Summary
-
-| Environment Variable | Description | Default | Required |
-|---------------------|-------------|---------|----------|
-| `PADDLEOCR_API_URL` | PaddleOCR API endpoint URL | `""` | Yes, when using environment variables |
-| `PADDLEOCR_ALGORITHM` | Algorithm to use for parsing | `"PaddleOCR-VL"` | No |
-| `PADDLEOCR_ACCESS_TOKEN` | Access token for official API | `None` | Only when using official API |
-
-Environment variables can be used for auto-provisioning, but are not required if configuring via UI. When environment variables are set, these values are used to auto-provision a PaddleOCR model for the tenant on first use.
-
-
+For this checkout, use [the operations manual](operations.html) for image/configuration changes and container operations, and [task troubleshooting](troubleshooting.md) for parsing and queue diagnostics. Applications use a mounted checkout; changes to env or mounts require `bash docker/docker.sh recreate app`.
 ### How do I use Ollama with RAGFlow for local LLM inference?
 
 RAGFlow supports Ollama as a local model provider for private, offline inference.

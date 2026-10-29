@@ -9,7 +9,7 @@ from datetime import datetime
 from pathlib import Path
 from unittest.mock import patch
 
-SCRIPT = Path(__file__).resolve().parents[2] / "docker/split/sync_model_catalog.py"
+SCRIPT = Path(__file__).resolve().parents[2] / "docker/scripts/sync_model_catalog.py"
 spec = importlib.util.spec_from_file_location("sync_model_catalog", SCRIPT)
 sync = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(sync)
@@ -173,13 +173,13 @@ class OperationTests(unittest.TestCase):
         self.addCleanup(self.directory.cleanup)
         self.root = Path(self.directory.name)
         (self.root / "conf").mkdir()
-        (self.root / "docker/split").mkdir(parents=True)
+        (self.root / "docker/config").mkdir(parents=True)
         self.work = self.root / "run"
         self.work.mkdir()
         self.catalog = self.root / "conf/llm_factories.json"
         self.catalog.write_bytes(b"before")
         policy = b"policy"
-        (self.root / "docker/split/tongyi-sync-policy.json").write_bytes(policy)
+        (self.root / "docker/config/tongyi-sync-policy.json").write_bytes(policy)
         (self.work / "catalog.before.json").write_bytes(b"before")
         (self.work / "catalog.after.json").write_bytes(b"after")
         self.before_rows, self.after_rows = [{"id": "old"}], [{"id": "old"}, {"id": "new"}]

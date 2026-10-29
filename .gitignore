@@ -28,9 +28,9 @@ Cargo.lock
 .DS_Store
 
 # Exclude the log folder
-docker/ragflow-logs/
 /flask_session
 /logs
+/VERSION
 rag/res/deepdoc
 
 # Exclude sdk generated files
@@ -55,14 +55,8 @@ stagehand-server*
 /9b5ad71b2ce5302211f9c61530b329a4922fc6a4
 .lh/
 .venv
-docker/data
 
-# OceanBase data and conf
-docker/oceanbase/conf
-docker/oceanbase/data
 
-# SeekDB data and conf
-docker/seekdb
 
 
 #--------------------------------------------------#

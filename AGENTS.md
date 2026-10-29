@@ -91,10 +91,10 @@ Rules:
 ```bash
 uv sync --python 3.13 --all-extras
 uv run python3 ragflow_deps/download_deps.py
-docker compose -f docker/docker-compose-base.yml up -d
+bash docker/docker.sh start storage
 source .venv/bin/activate
 export PYTHONPATH=$(pwd)
-bash docker/launch_backend_service.sh
+bash docker/runtime/launch_backend_service.sh
 uv run pytest
 ruff check
 ruff format

@@ -1,0 +1,165 @@
+<!doctype html>
+<html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>RAGFlow 部署与操作手册</title>
+<style>
+:root{color-scheme:light}*{box-sizing:border-box}body{margin:0;background:#f3f6f8;color:#182a3b;font:16px/1.75 system-ui,"Microsoft YaHei",sans-serif}main{max-width:1120px;margin:auto;padding:42px 40px 80px;background:white}h1{font-size:32px;line-height:1.3}h2{margin-top:44px;border-bottom:2px solid #dae7ed;padding-bottom:10px;color:#145f78}h3{margin-top:28px}a{color:#006a8c}nav{padding:20px;background:#edf5f8;display:flex;flex-wrap:wrap;gap:8px 22px}pre{padding:18px 22px;background:#122737;color:#e2edf3;overflow:auto;border-radius:8px;line-height:1.6;font-size:14px}code{font-family:Consolas,monospace}p code,li code,td code{background:#eff5f7;padding:1px 4px}table{width:100%;border-collapse:collapse;font-size:14px}th,td{text-align:left;vertical-align:top;padding:10px 12px;border:1px solid #dce5eb}th{background:#edf4f7}.note{border-left:4px solid #2587a1;padding:14px 20px;background:#edf7fa}.meta{color:#5a6f7c}@media(max-width:700px){main{padding:24px 18px}h1{font-size:26px}table{display:block;overflow:auto}}@media print{main{max-width:none;padding:0}pre{white-space:pre-wrap;background:#f3f6f8;color:#122737}nav{display:none}h2{break-after:avoid}}
+</style></head><body><main>
+<p class="meta">RAGFlow 二次开发 · 2026-10-29 · Linux / Docker Compose v2</p>
+<h1>部署与操作手册</h1>
+<p>基于 RAGFlow v0.27.2，当前维护 Python 应用、MySQL、Redis、MinIO、Elasticsearch，以及 Kibana 和 Redis Insight。训练数据制作、模型微调和评测能力后续在同一工程内扩展。</p>
+<nav><a href="#layout">部署边界</a><a href="#mount">工程挂载</a><a href="#deploy">部署与启停</a><a href="#inside">容器内操作</a><a href="#models">模型维护</a><a href="#backup">备份恢复</a><a href="#verify">现场验证</a><a href="#rollback">回退</a></nav>
+<h2 id="layout">1. 部署边界与目录</h2>
+<table><thead><tr><th>主机</th><th>本工程服务</th><th>访问地址</th></tr></thead><tbody>
+<tr><td>192.168.88.91</td><td>ragflow-app，应用上限 48 GiB</td><td>Web :8088；API :9380；Admin :9381</td></tr>
+<tr><td>192.168.88.92</td><td>ragflow-storage；另运行 ragflow-app 验证单机，应用上限 6 GiB</td><td>Web :8088；API :9380；Admin :9381</td></tr>
+<tr><td>92 存储</td><td>MySQL / Redis / MinIO / ES / Kibana</td><td>:3306 / :6379 / :9000、:9001 / :9200 / :5601</td></tr>
+<tr><td>Redis Insight</td><td>仅绑定 92 回环地址</td><td>SSH 隧道到 127.0.0.1:5540</td></tr>
+</tbody></table>
+<p>两端工程路径均为 <code>/home/cdky/workspace/github/ragflow</code>。目录职责见 <a href="../docker/README.md">docker/README.md</a>。配置在 <code>docker/env/</code>，日志、证据、备份分别在 <code>docker/logs/</code>、<code>docker/evidence/</code>、<code>docker/backups/</code>，均不进 Git 或镜像上下文。</p>
+<div class="note">91 的 ragflow-server、ragflow-mysql、ragflow-minio、ragflow-redis、ragflow-es-01 属于其他工程的 Compose 项目 docker，禁止停止、重建或删除这些容器及数据卷。入口固定选择 ragflow-app / ragflow-storage，不使用全局 prune 或模糊名称批量操作。</div>
+<p>91 和 92 应用共享 92 的业务数据、账号和任务队列，并非两套隔离业务实例。停写维护须同时考虑两端 Worker。92 约 16 GiB 内存，6 GiB 应用配额用于部署验证，不代表已经通过大文档或训练负载测试。</p>
+<h2 id="mount">2. 工程整体挂载与二次开发</h2>
+<p>宿主机完整工程以 bind mount 挂载到 <code>/ragflow</code>。API、Worker、解析代码、配置与工具直接读取 checkout；容器内源码编辑同步到宿主机。运行环境 Dockerfile 不 COPY 应用源码，已有进度及 Graph 修复直接来自挂载源码。</p>
+<table><thead><tr><th>容器路径</th><th>来源</th></tr></thead><tbody>
+<tr><td>/ragflow</td><td>宿主机工程根目录，可读写。</td></tr>
+<tr><td>/ragflow/.venv</td><td>按镜像 ID 区分的只读 Python 依赖卷，首次由 Docker 从镜像填充。</td></tr>
+<tr><td>/ragflow/rag/res/deepdoc</td><td>对应镜像的只读 OCR 模型卷。</td></tr>
+<tr><td>/ragflow/web/dist、/ragflow/bin</td><td>对应镜像的前端和二进制只读卷；APP_WEB_DIST 可改用宿主机前端产物。</td></tr>
+<tr><td>/ragflow/conf/service_conf.yaml</td><td>绑定 docker/state/service_conf.yaml，生成配置不覆盖工程原文件。</td></tr>
+<tr><td>/ragflow/logs、/opt/ragflow-ops</td><td>日志持久化目录、只读运维脚本目录。</td></tr>
+</tbody></table>
+<p>整目录挂载会遮住镜像原 /ragflow，因此运行依赖需单独挂载。Tika JAR、tokenizer 缓存和版本文件由镜像 <code>/opt/ragflow-runtime</code> 补齐到忽略管理的运行文件，不包含应用源码。镜像 ID 改变会自动创建新依赖卷；旧卷保留供回退，不能盲目清理。</p>
+<pre><code># 修改 Python 源码后重新加载
+bash docker/docker.sh restart app
+# 前端修改需编译
+cd web
+npm ci
+npm run build
+cd ..
+# app.env 设置 APP_WEB_DIST=/home/cdky/workspace/github/ragflow/web/dist
+bash docker/docker.sh recreate app</code></pre>
+<p>Python 依赖和原生库变化使用完整 Dockerfile 构建镜像，再更新 RAGFLOW_IMAGE 并重建应用。不要在只读依赖卷中安装包。未配置 APP_WEB_DIST 时使用镜像配套的预编译前端，源码修改本身不会自动编译前端。</p>
+<h2 id="deploy">3. 初始化、构建与部署</h2>
+<h3>3.1 新环境配置</h3>
+<pre><code>cd /home/cdky/workspace/github/ragflow
+bash docker/docker.sh init --app-ip 192.168.88.91 --storage-ip 192.168.88.92 --app-memory 48g
+# 单机：两个 IP 都填主机地址，92 可设置 --app-memory 6g
+chmod 600 docker/env/*.env</code></pre>
+<p>仅首次执行初始化；任何 env 已存在都会拒绝覆盖。分离部署将匹配的 app.env 和 storage.env 安全分发到对应主机；当前已有配置不能重新生成密码。应用配置不包含 MySQL root 密码。</p>
+<p>APP_IP 控制应用绑定地址，APP_WEB_PORT / APP_API_PORT / APP_ADMIN_PORT 默认为 8088 / 9380 / 9381。MYSQL_HOST、REDIS_HOST、MINIO_HOST、ES_HOST 使用容器可达的存储 IP；同机仍使用 LAN IP，不能填容器自己的 127.0.0.1。STORAGE_IP 控制存储监听。</p>
+<h3>3.2 镜像与启动</h3>
+<pre><code># 缺少基础镜像时显式 docker pull infiniflow/ragflow:v0.27.2
+bash docker/docker.sh build runtime ragflow-local:v0.27.2-runtime-20261029
+# app.env 设置 RAGFLOW_IMAGE=ragflow-local:v0.27.2-runtime-20261029
+# 缺少存储镜像时：bash docker/docker.sh pull storage
+
+# 分离部署：92 执行
+bash docker/docker.sh config storage
+bash docker/docker.sh start storage
+# 分离部署：91 执行
+bash docker/docker.sh config app
+bash docker/docker.sh start app
+# 同机部署：92 执行
+bash docker/docker.sh config all
+bash docker/docker.sh start all</code></pre>
+<p>运行环境构建核验基础镜像 config ID <code>sha256:e0e1d9ec4af666710a35f3f7e1e3fe6b450b6a2cfe52851f107fc5f5967bbe8f</code>，仅传入 Dockerfile，不发送应用源码、凭据或备份。构建结果写入 manifests/runtime-image.lock.json；JSON 是核验记录，不会自动控制 Compose 选用的镜像。</p>
+<p>存储先等待四项核心服务健康，再设置 Kibana 服务账号和 ES 快照仓库，最后启动管理界面。应用等待健康检查，启动统一使用 --pull never。92 七个 ragflow-storage 数据卷继续复用，单机应用不会创建第二套存储。</p>
+<h3>3.3 日常命令</h3>
+<pre><code>bash docker/docker.sh status app
+bash docker/docker.sh status storage
+bash docker/docker.sh logs app --tail 100
+bash docker/docker.sh logs storage --since 30m mysql elasticsearch
+bash docker/docker.sh restart app
+bash docker/docker.sh recreate app
+bash docker/docker.sh stop all
+bash docker/docker.sh start all
+# 完整源码构建，需要依赖镜像、模型和构建网络
+bash docker/docker.sh build source ragflow-local:my-release --build-arg NEED_MIRROR=1</code></pre>
+<p>restart 用于加载源码；recreate 用于 env、挂载、镜像变化。all 启动先存储后应用，停止先应用后存储。down 只移除所选项目容器/网络，保留数据卷，拒绝额外的 -v 等参数。exec 为自动化提供非交互入口；人工操作使用 into 后执行原生命令。</p>
+<h2 id="inside">4. 先进入容器，再执行原生命令</h2>
+<p>以下每组独立执行。第一行在宿主机工程根目录，之后在容器内执行，末尾 exit 返回主机。密码读取容器已有环境变量，不抄录到文档或命令历史。</p>
+<h3>应用与任务</h3>
+<pre><code>bash docker/docker.sh into app
+pwd
+python /opt/ragflow-ops/inspect_task.py
+python /opt/ragflow-ops/inspect_task.py --doc-id 实际文档ID
+tail -n 100 logs/ragflow_server.log
+exit</code></pre>
+<h3>MySQL</h3>
+<pre><code>bash docker/docker.sh into storage mysql
+MYSQL_PWD="$MYSQL_PASSWORD" mysql -u ragflow -D rag_flow
+# 在 mysql 提示符：SELECT COUNT(*) FROM document;
+# 在 mysql 提示符：quit
+exit</code></pre>
+<p>管理操作使用 MYSQL_PWD="$MYSQL_ROOT_PASSWORD" mysql -uroot。数据库密码不是 SSH 密码。env 内 ADMIN_DEFAULT_PASSWORD 是初始化密码，用户改密后它不自动更新数据库。</p>
+<h3>Redis：业务使用 DB 1</h3>
+<pre><code>bash docker/docker.sh into storage redis
+REDISCLI_AUTH="$REDIS_PASSWORD" redis-cli -n 1
+# Redis 提示符：PING / SCAN 0 COUNT 100 / quit
+exit</code></pre>
+<h3>MinIO</h3>
+<pre><code>bash docker/docker.sh into storage minio
+mc alias set local http://127.0.0.1:9000 "$MINIO_ROOT_USER" "$MINIO_ROOT_PASSWORD"
+mc admin info local
+mc ls local
+exit</code></pre>
+<h3>Elasticsearch 与管理界面</h3>
+<pre><code>bash docker/docker.sh into storage elasticsearch
+curl -fsS -u "elastic:$ELASTIC_PASSWORD" 'http://127.0.0.1:9200/_cluster/health?pretty'
+curl -fsS -u "elastic:$ELASTIC_PASSWORD" 'http://127.0.0.1:9200/_cat/indices?v'
+exit
+# 本地终端建立 Redis Insight 隧道
+ssh -N -L 5540:127.0.0.1:5540 cdky@192.168.88.92</code></pre>
+<p>Kibana：<a href="http://192.168.88.92:5601">192.168.88.92:5601</a>，人工账号 elastic，密码来自 storage.env；kibana_system 仅用于服务。Redis Insight 通过本地 http://127.0.0.1:5540 访问。更多只读查询见 <a href="kibana-inspection.md">Kibana 手册</a>。</p>
+<h2 id="models">5. 模型目录与排障</h2>
+<p>任务及定点 Graph 恢复见 <a href="troubleshooting.md">排障手册</a>。恢复工具默认只读，--apply 才写日志并 ACK；本轮部署验证不执行恢复或计费模型调用。</p>
+<p>模型同步是协调主机文件和应用重载的宿主机工具，从工程根目录运行。共享存储时选一个维护主机执行，然后同步另一端 conf/llm_factories.json 并重启另一端应用，避免两端内存目录不一致。</p>
+<pre><code>run="docker/backups/tongyi-sync-$(date +%Y%m%d-%H%M%S)"
+python3 docker/scripts/sync_model_catalog.py plan --instance-id 实际实例ID --work-dir "$run"
+# 审阅计划后应用
+python3 docker/scripts/sync_model_catalog.py apply --work-dir "$run"
+python3 docker/scripts/sync_model_catalog.py verify --work-dir "$run"
+# 回退该次同步：python3 docker/scripts/sync_model_catalog.py rollback --work-dir "$run"</code></pre>
+<h3 id="embedding">本地 Qwen3 Embedding 配置（2026-10-23 核验记录）</h3>
+<p>该模型服务位于 192.168.88.169:9502，不属于本次 91/92 存储部署，本轮未调用。此前核验模型为 qwen3-text-embedding，最大输入 2048 Token，输出 1024 维。</p>
+<ol><li>在“设置 → 模型提供商”添加 VLLM 实例，名称可用 local-qwen3-embedding，Base URL 填 http://192.168.88.169:9502/v1。密钥只填服务分配的值，不加 Bearer 前缀。</li><li>选择 qwen3-text-embedding，类型为 Embedding，最大 Token 数填 2048；不要将向量维度 1024 当作 Token 限制。</li><li>验证模型后保存，按需设置全局默认及具体知识库。全局默认不会替换已有知识库的模型。</li></ol>
+<p>Base URL 不要加 /embeddings。服务须从应用容器可达。即使新旧模型都是 1024 维，向量空间也不相同；先用独立知识库验证，迁移时为整库原文、编译结果和 Graph 统一重建向量，不能直接改 embd_id 混用旧向量。</p>
+<h2 id="backup">6. 备份与恢复</h2>
+<h3>6.1 在线 MySQL 备份</h3>
+<pre><code>bash docker/docker.sh into storage mysql
+umask 077
+MYSQL_PWD="$MYSQL_ROOT_PASSWORD" mysqldump -uroot --single-transaction \
+  --routines --events --triggers --set-gtid-purged=OFF --databases rag_flow \
+  &gt; /tmp/rag_flow.sql
+exit
+# 宿主机取出备份，请使用唯一文件名避免覆盖
+mkdir -p docker/backups
+chmod 700 docker/backups
+docker cp ragflow-storage-mysql-1:/tmp/rag_flow.sql docker/backups/rag_flow.sql
+chmod 600 docker/backups/rag_flow.sql</code></pre>
+<p>在线 SQL 备份不覆盖 ES、MinIO 和 Redis，不能作为全系统一致性备份。</p>
+<h3>6.2 全存储冷备</h3>
+<pre><code># 等待当前任务结束，两端应用主机分别执行
+bash docker/docker.sh stop app
+# 92：列出全部应用 API 地址
+APP_STOPPED=1 APP_URLS="http://192.168.88.91:9380 http://192.168.88.92:9380" \
+  bash docker/scripts/backup.sh</code></pre>
+<p>脚本检查端点不响应、七个卷确属 ragflow-storage 后停止存储，只读归档 mysql_data、es_data、es_snapshots、minio_data、redis_data、kibana_data、redisinsight_data；校验 gzip 并生成 SHA256SUMS。结束后只恢复原先运行的存储容器，不自动启动应用。检查状态健康后再分别启动两端应用。</p>
+<p>APP_STOPPED=1 是操作者确认。网络不可达不能证明远端 Worker 已停，应检查每台主机的容器实际状态。同一备份集合还须保存两端 app.env、storage.env、源码版本与差异和镜像记录，权限 600。</p>
+<h3>6.3 恢复顺序</h3>
+<ol><li>在独立位置校验 SHA256SUMS 和压缩包，先恢复到独立测试卷，不能覆盖在用数据。</li><li>使用备份对应版本的存储镜像。冷备数据解包到各自空卷；在线 SQL 导入独立 MySQL 实例。物理数据库目录不能直接跨大版本复制。</li><li>数据、env 密钥和代码作为一组切换。只恢复 MySQL 会造成 ES 向量、MinIO 对象、Redis 任务不一致。</li><li>停止全部应用写入，验证恢复存储健康和业务对象关联后再切换连接配置，重建应用。</li><li>使用独立探针和真实只读查询验收。保留旧卷以便回退，不运行全局清理。</li></ol>
+<h2 id="verify">7. 本轮现场验证与复现</h2>
+<p id="verification-status">2026-10-29：91 分离应用与 92 单机应用均健康，Web 8088、API 9380 的 healthz/ping 均返回 HTTP 200；应用和四类存储的 into 交互入口通过。两端工程双向挂载、tokenizer、7 个 ONNX 模型及 Tika 资源检查通过。</p>
+<ul><li>独立探针完成 MySQL 读写、Redis Stream 消费/ACK、ES KNN、MinIO 对象覆盖读取，并跨 ES/应用重建及 92 应用重启验证数据保持；探针已清理。</li><li>91 旧实例的 5 个容器 ID、启动时间、挂载和重启次数未变化；92 七个既有存储卷的身份未变化。业务仍为 5 个知识库、5 份文档，未完成任务为 0。</li><li>11 项入口测试、19 项模型同步测试、3 项已有配置契约检查通过；Python/Go × Elasticsearch/Infinity 四组 CI Compose 配置通过解析，未启动 CI 服务。脚本语法、工作流 YAML 和本文链接检查通过。</li><li>92 应用空闲约 3.6 GiB，4 GiB 上限余量不足，已改为 6 GiB，重建后 healthy、OOMKilled=false。91 保持 48 GiB 上限。</li><li>本轮没有调用计费模型、执行知识库重解析、运行大文档压力测试、完整依赖镜像重建或全量灾备演练。在线 MySQL 备份已做 gzip 完整性检查。</li></ul>
+<p>两台主机分别构建运行环境，镜像内容 ID 不同，基础镜像和 Dockerfile 相同；各主机 ID 见 <a href="../docker/manifests/deployment-20261029.json">部署核验记录</a>。runtime-image.lock.json 记录其 build_host 对应的一次构建。</p>
+<pre><code>bash docker/docker.sh into app
+python /opt/ragflow-ops/verify_storage.py create rfcheck20261029example
+python /opt/ragflow-ops/verify_storage.py verify rfcheck20261029example
+python /opt/ragflow-ops/verify_storage.py clean rfcheck20261029example
+exit</code></pre>
+<p>使用唯一 probe 名。探针覆盖 MySQL 插入/更新、Redis KV 与 Stream 消费/ACK、ES 向量写入/KNN、MinIO 对象覆盖/读取。在 create 与 verify 之间重启所需服务可检查保持性，最后 clean 仅删除本次表、key、索引和桶。</p>
+<h2 id="rollback">8. 本轮目录调整回退</h2>
+<p>两台主机调整前源码与私有 env 备份：<code>/home/cdky/workspace/ragflow-deploy-backups/20261029-layout/source.tar.gz</code>。同目录保存容器和卷的调整前元数据。92 在线数据库备份：<code>docker/backups/20261029-layout/rag_flow.sql.gz</code>。旧日志、证据和备份仅迁移路径，未删除。</p>
+<p>先停止本工程应用，将归档解压到独立目录核对，再恢复源码、配置、路径及相应日志位置。旧镜像和旧挂载应一并恢复，避免旧入口读取新布局。存储卷未迁移或改名，本次应用布局回退无需数据库回滚。需要数据恢复时另按第 6 节执行。91 其他工程不参与。</p>
+<p>参考：<a href="https://github.com/infiniflow/ragflow">官方源码</a>、<a href="references/http_api_reference.md">本地 HTTP API 参考</a>、<a href="https://deepwiki.com/infiniflow/ragflow">DeepWiki</a>。用户提供的 v0.27.2 官方 API 页面本轮抓取返回 404，采用仓库 API 参考。精炼工作日志见 <a href="update.md">update.md</a>。</p>
+</main></body></html>

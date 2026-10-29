@@ -185,7 +185,7 @@ missing from the model directory.
 
 - Start dependencies
 ```bash
-docker compose -f docker/docker-compose-base.yml --profile ragflow-go --profile infinity up -d
+docker compose -f docker/ci/compose.base.yml --profile ragflow-go --profile infinity up -d
 ```
 
 

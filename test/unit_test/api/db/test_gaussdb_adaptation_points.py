@@ -348,8 +348,8 @@ def test_admin_config_warns_when_gaussdb_metadata_port_is_invalid(monkeypatch, c
 
 
 def test_docker_config_files_expose_gaussdb_metadata_settings():
-    env_text = read_repo_file("docker/.env")
-    template = read_repo_file("docker/service_conf.yaml.template")
+    env_text = read_repo_file("docker/ci/env.example")
+    template = read_repo_file("docker/config/service_conf.ci.yaml.template")
     source_conf = read_repo_file("conf/service_conf.yaml")
 
     assert "DB_TYPE=${DB_TYPE:-mysql}" in env_text
@@ -363,11 +363,9 @@ def test_docker_config_files_expose_gaussdb_metadata_settings():
 
 
 def test_docker_compose_metadata_profile_does_not_force_mysql_for_gaussdb():
-    env_text = read_repo_file("docker/.env")
-    base = load_yaml("docker/docker-compose-base.yml")
-    compose = load_yaml("docker/docker-compose.yml")
-    macos_compose = load_yaml("docker/docker-compose-macos.yml")
-    cn_compose = load_yaml("docker/docker-compose-CN-oc9.yml")
+    env_text = read_repo_file("docker/ci/env.example")
+    base = load_yaml("docker/ci/compose.base.yml")
+    compose = load_yaml("docker/ci/compose.python.yml")
 
     assert "METADATA_DB_PROFILE=${METADATA_DB_PROFILE:-mysql}" in env_text
     assert "COMPOSE_PROFILES=${DOC_ENGINE},${DEVICE},metadata-${METADATA_DB_PROFILE}" in env_text
@@ -379,14 +377,10 @@ def test_docker_compose_metadata_profile_does_not_force_mysql_for_gaussdb():
         assert mysql_dep["condition"] == "service_healthy"
         assert mysql_dep["required"] is False
 
-    assert macos_compose["services"]["ragflow"]["depends_on"]["mysql"]["required"] is False
-    for service_name in ["ragflow-cpu", "ragflow-gpu"]:
-        assert cn_compose["services"][service_name]["depends_on"]["mysql"]["required"] is False
-
 
 def test_docker_launch_scripts_skip_mysql_migration_for_gaussdb():
-    entrypoint = read_repo_file("docker/entrypoint.sh")
-    launcher = read_repo_file("docker/launch_backend_service.sh")
+    entrypoint = read_repo_file("docker/runtime/entrypoint.sh")
+    launcher = read_repo_file("docker/runtime/launch_backend_service.sh")
 
     assert 'DB_TYPE_NORMALIZED="${DB_TYPE:-mysql}"' in entrypoint
     assert 'if [[ "${DB_TYPE_NORMALIZED}" == "gaussdb" || "${DB_TYPE_NORMALIZED}" == "gauss" ]]; then' in entrypoint

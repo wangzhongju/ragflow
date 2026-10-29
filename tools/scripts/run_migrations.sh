@@ -2,7 +2,7 @@
 # -----------------------------------------------------------------------------
 # Shared migration script for model provider tables.
 #
-# Called by docker/entrypoint.sh and docker/launch_backend_service.sh.
+# Called by docker/runtime/entrypoint.sh and docker/runtime/launch_backend_service.sh.
 # Keeps migration stages and versions in one place to avoid divergence.
 #
 # Usage:

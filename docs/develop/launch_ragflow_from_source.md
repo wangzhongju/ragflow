@@ -1,151 +1,16 @@
----
-sidebar_position: 3
-title: Launch Service from Source
-sidebar_label: Launch Service from Source
-slug: /launch_ragflow_from_source
-sidebar_custom_props: {
-  categoryIcon: LucideMonitorPlay
-}
----
-# Launch Service from Source
+# 从源码启动后端
 
-A guide explaining how to set up a RAGFlow service from its source code. By following this guide, you'll be able to debug using the source code.
-
-## Target Audience
-
-Developers who have added new features or modified existing code and wish to debug using the source code, *provided that* their machine has the target deployment environment set up.
-
-## Prerequisites
-
-- CPU &ge; 4 cores
-- RAM &ge; 16 GB
-- Disk &ge; 50 GB
-- Docker &ge; 24.0.0 & Docker Compose &ge; v2.26.1
-
-:::tip NOTE
-If you have not installed Docker on your local machine (Windows, Mac, or Linux), see the [Install Docker Engine](https://docs.docker.com/engine/install/) guide.
-:::
-
-## Launch a Service from Source
-
-To launch a RAGFlow service from source code:
-
-### Clone the RAGFlow Repository
+默认二次开发使用 [整工程容器挂载](../operations.html#mount)，Python 修改后 `bash docker/docker.sh restart app` 即重新加载。下面是确有需要在宿主机运行后端的流程；不要同时启动同端口的容器应用。
 
 ```bash
-git clone https://github.com/infiniflow/ragflow.git
-cd ragflow/
+uv sync --python 3.13 --all-extras
+uv run python3 ragflow_deps/download_deps.py
+bash docker/docker.sh start storage
+source .venv/bin/activate
+export PYTHONPATH=$(pwd)
+bash docker/runtime/launch_backend_service.sh
 ```
 
-### Install Python Dependencies
+先根据 [部署手册](../../docker/README.md) 配置 `docker/env/app.env`，其中存储 IP 指向实际存储主机。源码入口加载该文件；宿主机 `conf/service_conf.yaml` 也需设置为相同的连接参数，不要直接使用 CI 示例端口。前端开发遵循 `web/CLAUDE.md`。
 
-1. Install uv:
-
-   ```bash
-   pipx install uv
-   ```
-
-2. Install RAGFlow service's Python dependencies:
-
-   ```bash
-   uv sync --python 3.13 --frozen
-   ```
-   *A virtual environment named `.venv` is created, and all Python dependencies are installed into the new environment.*
-
-   If you need to run tests against the RAGFlow service, install the test dependencies:
-
-   ```bash
-   uv sync --python 3.13 --group test --frozen && uv pip install sdk/python --group test
-   ```
-
-### Launch Third-Party Services
-
-The following command launches the 'base' services (MinIO, Elasticsearch, Redis, and MySQL) using Docker Compose:
-
-```bash
-docker compose -f docker/docker-compose-base.yml up -d
-```
-
-### Update `host` and `port` Settings for Third-Party Services
-
-1. Add the following line to `/etc/hosts` to resolve all hosts specified in **docker/service_conf.yaml.template** to `127.0.0.1`:
-
-   ```
-   127.0.0.1       es01 infinity mysql minio redis
-   ```
-
-2. In **docker/service_conf.yaml.template**, update mysql port to `5455` and es port to `1200`, as specified in **docker/.env**.
-
-### Launch the RAGFlow Backend Service
-
-1. Comment out the `nginx` line in **docker/entrypoint.sh**.
-
-   ```
-   # /usr/sbin/nginx
-   ```
-
-2. Activate the Python virtual environment:
-
-   ```bash
-   source .venv/bin/activate
-   export PYTHONPATH=$(pwd)
-   ```
-
-3. **Optional:** If you cannot access HuggingFace, set the HF_ENDPOINT environment variable to use a mirror site:
-
-   ```bash
-   export HF_ENDPOINT=https://hf-mirror.com
-   ```
-
-4. Check the configuration in **conf/service_conf.yaml**, ensuring all hosts and ports are correctly set.
-
-5. Run the **entrypoint.sh** script to launch the backend service:
-
-   ```shell
-   JEMALLOC_PATH=$(pkg-config --variable=libdir jemalloc)/libjemalloc.so;
-   LD_PRELOAD=$JEMALLOC_PATH python rag/svr/task_executor.py -i 1;
-   ```
-   ```shell
-   python api/ragflow_server.py;
-   ```
-
-### Launch the RAGFlow Frontend Service
-
-1. Navigate to the `web` directory and install the frontend dependencies:
-
-   ```bash
-   cd web
-   npm install
-   ```
-
-2. Update `server.proxy.target` in **vite.config.ts** to `http://127.0.0.1:9380`:
-
-   ```bash
-   vim vite.config.ts
-   ```
-
-3. Start up the RAGFlow frontend service:
-
-   ```bash
-   npm run dev
-   ```
-
-   *The following message appears, showing the IP address and port number of your frontend service:*
-
-   ![](https://github.com/user-attachments/assets/0daf462c-a24d-4496-a66f-92533534e187)
-
-### Access the RAGFlow Service
-
-In your web browser, enter `http://127.0.0.1:<PORT>/`, ensuring the port number matches that shown in the screenshot above.
-
-### Stop the RAGFlow Service When the Development Is Done
-
-1. Stop the RAGFlow frontend service:
-   ```bash
-   pkill npm
-   ```
-
-2. Stop the RAGFlow backend service:
-   ```bash
-   pkill -f "docker/entrypoint.sh"
-   ```
+Go 编译和测试使用工程根目录 `build.sh`，原生依赖由该脚本配置，详见 [internal/development.md](../../internal/development.md)。CI 多后端矩阵定义单独位于 `docker/ci/`。
