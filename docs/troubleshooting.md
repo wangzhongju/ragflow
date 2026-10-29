@@ -819,3 +819,13 @@ python3 docker/split/sync_model_catalog.py verify --work-dir "$run"
 [官方模型说明](https://help.aliyun.com/zh/model-studio/qwen3-8-omni-flash)明确支持北京地域、Chat Completions/Responses、1M 上下文及文本输出；[Omni 调用指南](https://help.aliyun.com/zh/model-studio/qwen-omni)使用 `reasoning_effort` 调节思考。现有 Chat/CV 路径有复用基础，但 Qwen3 通用规则仍使用 `enable_thinking`，音频路径使用原生 MultiModalConversation 和 ASR 参数，不能仅补名称就认定所有模态可用。
 
 准确范围应为“完整拉取官方元数据，按当前映射注册部分模型”。后续需按模型协议和输入/输出模态细分支持能力，补齐非实时 Omni 的 Chat/Vision 映射及请求参数测试，再单独评估音频/视频入口；`qwen3.8-omni-flash-realtime` 属于 Realtime 协议，不能与非实时版合并处理。本次仅核查并补充说明，未修改映射、注册项或线上调用行为。
+
+## 14. 解析/切块修改的联动边界与 t4 修正步骤
+
+完整存储结构、关联字段、两类编辑入口、t4 现场 ID、单块 PATCH 与文档下游重跑步骤见 [数据存储、更新联动与 t4 局部修正](data-storage-and-local-correction.md)。
+
+本次只读确认 t4 有 25 个普通块和 38 条文档图谱记录；题注 `图1. 迪丽热巴` 位于 chunk `cbae5b080fb2ca3b`，至少影响人物实体、关系、另一实体的英文描述和图谱 JSON。单块编辑会重算该块向量/全文分词，但不会自动更新 Graph 或中间运行快照。Parser/Chunker 结果编辑须显式重跑下游；该入口先删除当前文档全部索引，不能按单块增量操作理解。另发现 t4 摘要提示词未绑定正文，BM25 使用了无正文提示回复，完整重跑前必须修正运行 DSL 的摘要变量。已准备两份请求体但未提交，未改线上数据。
+
+## 15. 使用 Kibana 查看正文、BM25 与向量
+
+入口为 `http://192.168.88.92:5601`，人工登录使用 `elastic/ELASTIC_PASSWORD`。已验证 ES 8.11.3、Kibana available、t4 单块读取、1024 维向量、Term vectors 和 Explain 查询。完整 Console 请求、Discover 数据视图/KQL 和结果解读见 [Kibana 查看手册](kibana-inspection.md)。BM25 是查询时评分，不是独立表；中文 whitespace 查询不能直接等同 RAGFlow 的完整检索流程。本次只读验证，没有修改索引或发起模型调用。
