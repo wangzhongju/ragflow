@@ -2,6 +2,7 @@
 !/env/.gitkeep
 /logs/
 /state/
+/home/
 /backups/
 /evidence/
 /ci/.env

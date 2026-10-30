@@ -29,12 +29,13 @@ internal/binding/cpp/cmake-build-release/
 internal/binding/cpp/cmake-build-debug/
 target/
 
-# ── ragflow_deps build context (built as a separate image, mounted ──
-# ── from infiniflow/ragflow_deps:latest by the main Dockerfile)     ──
+# ── ragflow_deps build context (built as a separate image) ──
+# The Python Dockerfiles mount their pinned DEPS_IMAGE stage.
 # Excluding the entire directory keeps the main build context small
 # regardless of which deps files download_deps.py currently fetches.
 # The deps image is built from this directory with:
-#   cd ragflow_deps && docker build -f Dockerfile -t infiniflow/ragflow_deps .
+#   docker build -f ragflow_deps/Dockerfile -t ragflow-local:deps-python ragflow_deps
+# Select a custom image with --build-arg DEPS_IMAGE=ragflow-local:deps-python.
 ragflow_deps/
 
 # ── IDE and editor config ──────────────────────────────────────────────────
@@ -55,6 +56,7 @@ htmlcov/
 docker/env/
 docker/logs/
 docker/state/
+docker/home/
 docker/backups/
 docker/evidence/
 docker/ci/.env

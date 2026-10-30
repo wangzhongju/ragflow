@@ -7,12 +7,18 @@ services:
     entrypoint: [bash, /ragflow/docker/runtime/entrypoint-mounted.sh]
     command: [--enable-adminserver, --init-model-provider-tables]
     env_file: ${RAGFLOW_ENV_DIR:-../env}/app.env
+    environment:
+      DOCKER_USER: ${DOCKER_USER:?Use docker.sh}
+      DOCKER_USER_ID: ${DOCKER_USER_ID:?Use docker.sh}
+      DOCKER_GRP: ${DOCKER_GRP:?Use docker.sh}
+      DOCKER_GRP_ID: ${DOCKER_GRP_ID:?Use docker.sh}
     ports:
       - "${APP_IP:?Set APP_IP}:${APP_WEB_PORT:-8088}:80"
       - "${APP_IP}:${APP_API_PORT:-9380}:9380"
       - "${APP_IP}:${APP_ADMIN_PORT:-9381}:9381"
     volumes:
       - ../..:/ragflow
+      - ../home:/home
       - ../logs:/ragflow/logs
       - ../config/service_conf.yaml.template:/ragflow/conf/service_conf.yaml.template:ro
       - ../state/service_conf.yaml:/ragflow/conf/service_conf.yaml

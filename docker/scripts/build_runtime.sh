@@ -6,9 +6,10 @@ tag=${1:-ragflow-local:v0.27.2-runtime}
 base=infiniflow/ragflow:v0.27.2
 expected=sha256:e0e1d9ec4af666710a35f3f7e1e3fe6b450b6a2cfe52851f107fc5f5967bbe8f
 [[ $(docker image inspect -f '{{.Id}}' "$base") == "$expected" ]] || { echo 'Base image digest mismatch.' >&2; exit 1; }
-# No application source, credentials or runtime data enter this build context.
-tar -cf - docker/Dockerfile.runtime | \
-  DOCKER_BUILDKIT=0 docker build --network none --pull=false -f docker/Dockerfile.runtime -t "$tag" -
+# Only the Dockerfile and tool installer enter this build context.
+tar -cf - docker/Dockerfile.runtime docker/runtime/install-dev-tools.sh | \
+  DOCKER_BUILDKIT=0 docker build --network "${BUILD_NETWORK:-default}" --pull=false \
+    --build-arg "NEED_MIRROR=${NEED_MIRROR:-0}" -f docker/Dockerfile.runtime -t "$tag" -
 python3 - "$tag" "$base" "$expected" <<'PY'
 import json, socket, subprocess, sys
 from pathlib import Path

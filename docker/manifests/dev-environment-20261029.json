@@ -1,0 +1,197 @@
+{
+  "date": "2026-10-29",
+  "scope": "Application host-user environment and documentation",
+  "image": "ragflow-local:v0.27.2-dev-20261029",
+  "application_user": "cdky",
+  "uid": 1000,
+  "gid": 1000,
+  "hosts": {
+    "192.168.88.91": {
+      "image_id": "sha256:3c33e5ffa609f88b3b3c6bdf044b9fe98bade9b149d8fd6b649dd36274db20fc",
+      "memory_limit": "48g",
+      "interactive_user_checks": "passed",
+      "clean_source_offline_checks": {
+        "mounted_source": {
+          "ok": true,
+          "detail": [
+            "api/ragflow_server.py",
+            "rag/svr/task_executor.py",
+            "common/token_utils.py",
+            "docker/runtime/entrypoint-mounted.sh",
+            "conf/llm_factories.json"
+          ]
+        },
+        "python": {
+          "ok": true,
+          "detail": {
+            "version": "3.13.11",
+            "executable": "/opt/uv/python/cpython-3.13.11-linux-x86_64-gnu/bin/python3.13"
+          }
+        },
+        "tika": {
+          "ok": true,
+          "detail": {
+            "bytes": 81853424,
+            "md5": "532cafa9ad4253aac0750183ebd076fa"
+          }
+        },
+        "tokenizer": {
+          "ok": true,
+          "detail": {
+            "cache_bytes": 1681126,
+            "token_count": 12
+          }
+        },
+        "ocr_models": {
+          "ok": true,
+          "detail": [
+            "det.onnx",
+            "layout.laws.onnx",
+            "layout.manual.onnx",
+            "layout.onnx",
+            "layout.paper.onnx",
+            "rec.onnx",
+            "tsr.onnx"
+          ]
+        },
+        "frontend": {
+          "ok": true,
+          "detail": {
+            "index_bytes": 3529
+          }
+        },
+        "workspace_write": {
+          "ok": true,
+          "detail": {
+            "uid": 1000,
+            "gid": 1000,
+            "created_file_uid": 1000
+          }
+        },
+        "nltk": {
+          "ok": true,
+          "detail": {
+            "token_count": 4
+          }
+        },
+        "interactive_tools": {
+          "ok": true,
+          "detail": {
+            "commands": [
+              "sudo",
+              "vim",
+              "apt-get",
+              "apt-cache",
+              "bash",
+              "git",
+              "less",
+              "ip",
+              "ping"
+            ],
+            "cmake": "Candidate: 3.28.3-1build7"
+          }
+        }
+      }
+    },
+    "192.168.88.92": {
+      "image_id": "sha256:2a4d32a235c612f794bfe8e701c102a6ceb306172481a292d53fada31e1b2dcb",
+      "memory_limit": "6g",
+      "interactive_user_checks": "passed",
+      "clean_source_offline_checks": {
+        "mounted_source": {
+          "ok": true,
+          "detail": [
+            "api/ragflow_server.py",
+            "rag/svr/task_executor.py",
+            "common/token_utils.py",
+            "docker/runtime/entrypoint-mounted.sh",
+            "conf/llm_factories.json"
+          ]
+        },
+        "python": {
+          "ok": true,
+          "detail": {
+            "version": "3.13.11",
+            "executable": "/opt/uv/python/cpython-3.13.11-linux-x86_64-gnu/bin/python3.13"
+          }
+        },
+        "tika": {
+          "ok": true,
+          "detail": {
+            "bytes": 81853424,
+            "md5": "532cafa9ad4253aac0750183ebd076fa"
+          }
+        },
+        "tokenizer": {
+          "ok": true,
+          "detail": {
+            "cache_bytes": 1681126,
+            "token_count": 12
+          }
+        },
+        "ocr_models": {
+          "ok": true,
+          "detail": [
+            "det.onnx",
+            "layout.laws.onnx",
+            "layout.manual.onnx",
+            "layout.onnx",
+            "layout.paper.onnx",
+            "rec.onnx",
+            "tsr.onnx"
+          ]
+        },
+        "frontend": {
+          "ok": true,
+          "detail": {
+            "index_bytes": 3529
+          }
+        },
+        "workspace_write": {
+          "ok": true,
+          "detail": {
+            "uid": 1000,
+            "gid": 1000,
+            "created_file_uid": 1000
+          }
+        },
+        "nltk": {
+          "ok": true,
+          "detail": {
+            "token_count": 4
+          }
+        },
+        "interactive_tools": {
+          "ok": true,
+          "detail": {
+            "commands": [
+              "sudo",
+              "vim",
+              "apt-get",
+              "apt-cache",
+              "bash",
+              "git",
+              "less",
+              "ip",
+              "ping"
+            ],
+            "cmake": "Candidate: 3.28.3-1build7"
+          }
+        }
+      }
+    }
+  },
+  "validation": {
+    "docker_cli_unit_tests": 12,
+    "source_files": 6004,
+    "source_normalization": "CRLF/LF for UTF-8 text; binary bytes and actual symlink targets unchanged",
+    "cmake_installed_as_application_user": "3.28.3",
+    "ps1": "exact vision-pipeline/docker/env.sh format",
+    "personal_config_preserved_in_fresh_container": true,
+    "http_web_healthz_ping": "200 on both hosts",
+    "protected_91_containers_unchanged": 5,
+    "protected_92_storage_containers_unchanged": 6,
+    "storage_92_volumes_unchanged": 7,
+    "container_user_scope": "application only"
+  }
+}

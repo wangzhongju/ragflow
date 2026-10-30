@@ -24,7 +24,7 @@ Usage: docker/docker.sh COMMAND ROLE [ARGS]
   status app|storage|all      List containers, including stopped ones.
   config app|storage|all      Validate configuration without printing secrets.
   logs app|storage [ARGS]     Compose logs arguments, e.g. --tail 100 mysql.
-  into app                   Open Bash in the application at /ragflow.
+  into app                   Open Bash as the calling host user, with sudo.
   into storage SERVICE       Open sh in mysql/redis/minio/elasticsearch/etc.
   exec app|storage SERVICE COMMAND [ARGS]
                               Non-interactive command for scripts/redirects.
@@ -64,10 +64,13 @@ start() {
     image_id=$(docker image inspect -f '{{.Id}}' "$image")
     [[ $image_id =~ ^sha256:[a-f0-9]{64}$ ]] || die 'Cannot resolve application image ID'
     export RAGFLOW_RUNTIME_KEY=${image_id#sha256:}
-    mkdir -p "$DIR/state"
+    mkdir -p "$DIR/state" "$DIR/home"
     chmod 700 "$DIR/state"
     touch "$DIR/state/service_conf.yaml"
     chmod 600 "$DIR/state/service_conf.yaml"
+    if [[ $(id -u) == 0 ]]; then
+      chown "$DOCKER_USER_ID:$DOCKER_GRP_ID" "$DIR/state" "$DIR/state/service_conf.yaml" "$DIR/home"
+    fi
     compose app up -d --pull never --wait --wait-timeout 480 "$@"
   fi
 }
@@ -93,6 +96,13 @@ esac
 
 role=${1:-}
 case "$role" in app|storage|all) shift ;; *) die 'Specify role: app, storage or all' ;; esac
+if [[ $role == app || $role == all ]]; then
+  export DOCKER_USER=${SUDO_USER:-$(id -un)}
+  export DOCKER_USER_ID=$(id -u "$DOCKER_USER")
+  export DOCKER_GRP=$(id -gn "$DOCKER_USER")
+  export DOCKER_GRP_ID=$(id -g "$DOCKER_USER")
+  [[ $DOCKER_USER_ID -gt 0 ]] || die 'Run app commands as the non-root host user (or via sudo from that user)'
+fi
 case "$action" in
   start|recreate|stop|restart|down|status|config|pull) [[ $# == 0 ]] || die "$action accepts no extra arguments" ;;
 esac
@@ -121,7 +131,18 @@ for selected in "${roles[@]}"; do
       service=${1:-}; shell=sh
       if [[ $selected == app ]]; then service=${service:-ragflow}; shell=bash; fi
       [[ -n $service && $# -le 1 ]] || die 'into storage requires exactly one service'
-      compose "$selected" exec "$service" "$shell" ;;
+      if [[ $selected == app ]]; then
+        [[ $service == ragflow ]] || die 'The app service is ragflow'
+        compose app exec -T --user root \
+          -e "DOCKER_USER=$DOCKER_USER" -e "DOCKER_USER_ID=$DOCKER_USER_ID" \
+          -e "DOCKER_GRP=$DOCKER_GRP" -e "DOCKER_GRP_ID=$DOCKER_GRP_ID" \
+          ragflow bash /ragflow/docker/runtime/env.sh
+        compose app exec --user "$DOCKER_USER_ID:$DOCKER_GRP_ID" \
+          -e "HOME=/home/$DOCKER_USER" -e "USER=$DOCKER_USER" -e "LOGNAME=$DOCKER_USER" \
+          --workdir /ragflow ragflow bash --login
+      else
+        compose "$selected" exec "$service" "$shell"
+      fi ;;
     exec)
       [[ $# -ge 2 && $1 != -* ]] || die 'exec requires SERVICE COMMAND [ARGS]'
       compose "$selected" exec -T "$@" ;;

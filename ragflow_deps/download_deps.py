@@ -23,12 +23,13 @@
 # Typical workflow:
 #
 #   uv run python3 ragflow_deps/download_deps.py            # download
-#   cd ragflow_deps
-#   docker build -f Dockerfile -t infiniflow/ragflow_deps .
+#   docker build -f ragflow_deps/Dockerfile -t ragflow-local:deps-python ragflow_deps
+#   bash docker/docker.sh build source ragflow-local:my-release \
+#       --build-arg DEPS_IMAGE=ragflow-local:deps-python
 #
-# The main `Dockerfile` (built from the project root) pulls this image
-# via `--mount=type=bind,from=infiniflow/ragflow_deps:latest,...` and
-# is unaffected by where these files live locally.
+# `docker/Dockerfile` and `docker/Dockerfile.base` default to a digest-pinned
+# Python dependency image. DEPS_IMAGE selects a custom build; the main build
+# mounts its deps stage and does not read these artifacts from the host.
 
 import argparse
 import os

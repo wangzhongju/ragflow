@@ -1,7 +1,12 @@
 ARG BASE_IMAGE=infiniflow/ragflow:v0.27.2
 FROM ${BASE_IMAGE}
+USER root
+ARG NEED_MIRROR=0
+COPY docker/runtime/install-dev-tools.sh /tmp/install-dev-tools.sh
+RUN bash /tmp/install-dev-tools.sh && rm /tmp/install-dev-tools.sh
 # Preserve only image-provided runtime assets before /ragflow is bind-mounted.
-RUN mkdir -p /opt/ragflow-runtime && \
+RUN sed -i 's|/root/.local/share/uv/python|/opt/uv/python|g' /ragflow/.venv/pyvenv.cfg && \
+    mkdir -p /opt/ragflow-runtime && \
     cp /ragflow/VERSION /ragflow/9b5ad71b2ce5302211f9c61530b329a4922fc6a4 \
        /ragflow/tika-server-standard-3.3.0.jar \
        /ragflow/tika-server-standard-3.3.0.jar.md5 /opt/ragflow-runtime/

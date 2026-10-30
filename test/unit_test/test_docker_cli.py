@@ -43,9 +43,22 @@ class DockerCliTests(unittest.TestCase):
             "    sys.exit(17)\n"
         )
         docker.chmod(0o755)
+        identity = self.path / "id"
+        identity.write_text(
+            "#!/bin/sh\n"
+            "case \"$1\" in\n"
+            " -un) echo developer;;\n"
+            " -gn) echo developers;;\n"
+            " -u) echo 1001;;\n"
+            " -g) echo 1002;;\n"
+            " *) exit 2;;\n"
+            "esac\n"
+        )
+        identity.chmod(0o755)
         self.env = dict(os.environ, PATH=f"{self.path}:{os.environ['PATH']}",
                         RAGFLOW_ENV_DIR=str(self.env_dir), CALL_LOG=str(self.log),
                         COMPOSE_PROJECT_NAME="do-not-touch", COMPOSE_PROFILES="unrelated")
+        self.env.pop("SUDO_USER", None)
 
     def run_cli(self, *args, success=True):
         result = subprocess.run(["bash", str(self.script), *args], cwd=self.path,
@@ -111,9 +124,19 @@ class DockerCliTests(unittest.TestCase):
 
     def test_into_uses_selected_service_shell(self):
         self.run_cli("into", "app")
-        self.assertEqual(self.calls()[-1][-3:], ["exec", "ragflow", "bash"])
+        call = self.calls()[-1]
+        self.assertEqual(call[-3:], ["ragflow", "bash", "--login"])
+        self.assertEqual(call[call.index("--user") + 1], "1001:1002")
+        self.assertIn("HOME=/home/developer", call)
+        self.assertIn("/ragflow/docker/runtime/env.sh", self.calls()[-2])
         self.run_cli("into", "storage", "mysql")
         self.assertEqual(self.calls()[-1][-3:], ["exec", "mysql", "sh"])
+
+    def test_sudo_into_uses_original_host_user(self):
+        self.env["SUDO_USER"] = "original"
+        self.run_cli("into", "app")
+        self.assertIn("HOME=/home/original", self.calls()[-1])
+        self.assertIn("DOCKER_USER=original", self.calls()[-2])
 
     def test_exec_preserves_command_arguments_and_project(self):
         self.run_cli("exec", "app", "ragflow", "printf", "%s", "a b; $(false)")
