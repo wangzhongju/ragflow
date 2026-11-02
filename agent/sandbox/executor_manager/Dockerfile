@@ -1,11 +1,7 @@
 FROM python:3.11-slim-bookworm
 
-ARG NEED_MIRROR=1
 
-RUN if [ "$NEED_MIRROR" = 1 ]; then \
-        grep -rl 'deb.debian.org' /etc/apt/ | xargs sed -i 's|http[s]*://deb.debian.org|https://mirrors.tuna.tsinghua.edu.cn|g'; \
-    fi; \
-    apt-get update && \
+RUN apt-get update && \
     apt-get install -y curl gcc && \
     rm -rf /var/lib/apt/lists/*
 
@@ -35,7 +31,6 @@ COPY --from=ghcr.io/astral-sh/uv:0.7.5 /uv /uvx /bin/
 WORKDIR /app
 COPY . .
 
-RUN if [ "$NEED_MIRROR" = 1 ]; then export UV_INDEX_URL="https://pypi.tuna.tsinghua.edu.cn/simple"; else export UV_INDEX_URL="https://pypi.org/simple"; fi && \
-    uv pip install --system -r requirements.txt
+RUN uv pip install --system -r requirements.txt
 
 CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "9385"]

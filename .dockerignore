@@ -1,7 +1,6 @@
 # RAGFlow .dockerignore
 # Reduces Docker build context sent to the daemon.
-# All excluded items are either rebuilt inside Docker, mounted from
-# infiniflow/ragflow_deps, or are local-only artifacts.
+# Runtime assets enter through the verified third_partys cache.
 
 # ── Python virtual environments ─────────────────────────────────────────────
 .venv/
@@ -29,14 +28,11 @@ internal/binding/cpp/cmake-build-release/
 internal/binding/cpp/cmake-build-debug/
 target/
 
-# ── ragflow_deps build context (built as a separate image) ──
-# The Python Dockerfiles mount their pinned DEPS_IMAGE stage.
-# Excluding the entire directory keeps the main build context small
-# regardless of which deps files download_deps.py currently fetches.
-# The deps image is built from this directory with:
-#   docker build -f ragflow_deps/Dockerfile -t ragflow-local:deps-python ragflow_deps
-# Select a custom image with --build-arg DEPS_IMAGE=ragflow-local:deps-python.
+# Go native dependency downloads are independent of the application image.
 ragflow_deps/
+# Incomplete downloads and extraction receipts are not build inputs.
+third_partys/**/*.part
+third_partys/.receipts/
 
 # ── IDE and editor config ──────────────────────────────────────────────────
 .idea/

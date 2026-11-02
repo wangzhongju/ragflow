@@ -12,6 +12,7 @@ def main():
     parser.add_argument("--app-ip", required=True)
     parser.add_argument("--storage-ip", required=True)
     parser.add_argument("--app-memory", default="8g")
+    parser.add_argument("--app-mode", choices=("dev", "prod"), default="prod")
     args = parser.parse_args()
     for address in (args.app_ip, args.storage_ip):
         if ipaddress.ip_address(address).is_unspecified:
@@ -30,10 +31,11 @@ def main():
         if value.startswith("REPLACE_"):
             values[key] = secrets.token_hex(24)
     values.update(APP_IP=args.app_ip, STORAGE_IP=args.storage_ip, APP_MEM_LIMIT=args.app_memory)
+    values.update(APP_MODE=args.app_mode, RAGFLOW_IMAGE=f"ragflow-local:{args.app_mode}")
     for key in ("MYSQL_HOST", "MINIO_HOST", "ES_HOST", "REDIS_HOST"):
         values[key] = args.storage_ip
     app_keys = {
-        "APP_IP", "APP_WEB_PORT", "APP_API_PORT", "APP_ADMIN_PORT", "APP_MEM_LIMIT", "APP_MEM_RESERVATION", "RAGFLOW_IMAGE", "MYSQL_HOST", "MYSQL_PORT", "MYSQL_USER", "MYSQL_DBNAME",
+        "APP_IP", "APP_MODE", "APP_WEB_PORT", "APP_API_PORT", "APP_ADMIN_PORT", "APP_MEM_LIMIT", "APP_MEM_RESERVATION", "RAGFLOW_IMAGE", "MYSQL_HOST", "MYSQL_PORT", "MYSQL_USER", "MYSQL_DBNAME",
         "MYSQL_MAX_PACKET", "MYSQL_PASSWORD", "MINIO_HOST", "MINIO_USER", "MINIO_PASSWORD", "ES_HOST",
         "ELASTIC_PASSWORD", "REDIS_HOST", "REDIS_PASSWORD", "DOC_ENGINE", "DB_TYPE", "STORAGE_IMPL",
         "API_PROXY_SCHEME", "TZ", "REGISTER_ENABLED", "ENABLE_REGISTER", "ADMIN_DEFAULT_PASSWORD", "RAGFLOW_SECRET_KEY", "USE_DOCLING",

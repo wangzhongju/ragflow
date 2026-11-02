@@ -8,6 +8,7 @@ services:
     command: [--enable-adminserver, --init-model-provider-tables]
     env_file: ${RAGFLOW_ENV_DIR:-../env}/app.env
     environment:
+      APP_MODE: ${APP_MODE:-prod}
       DOCKER_USER: ${DOCKER_USER:?Use docker.sh}
       DOCKER_USER_ID: ${DOCKER_USER_ID:?Use docker.sh}
       DOCKER_GRP: ${DOCKER_GRP:?Use docker.sh}

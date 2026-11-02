@@ -8,10 +8,10 @@ TSR (Table Structure Recognition) models via a unified HTTP API using
 
 ```bash
 # Build
-docker build -f docker/Dockerfile.deepdoc -t deepdoc_oss:latest .
+bash docker/docker.sh build prod ragflow-local:deepdoc --target deepdoc
 
 # Run (CPU only; no GPU required)
-docker run -p 9390:9390 deepdoc_oss:latest
+docker run --rm -p 9390:9390 ragflow-local:deepdoc
 
 # Or via docker compose
 docker compose -f docker/ci/compose.python.yml up -d

@@ -288,6 +288,7 @@ jobs:
       - name: Build and push image
         run: |
           sudo docker login --username infiniflow --password-stdin <<< ${{ secrets.DOCKERHUB_TOKEN }}
+          python3 docker/scripts/fetch_artifacts.py
           sudo docker build -t infiniflow/ragflow:${RELEASE_TAG} -f docker/Dockerfile .
           sudo docker tag infiniflow/ragflow:${RELEASE_TAG} infiniflow/ragflow:latest
           sudo docker push infiniflow/ragflow:${RELEASE_TAG}

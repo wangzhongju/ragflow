@@ -38,7 +38,8 @@ class DockerCliTests(unittest.TestCase):
             "with open(os.environ['CALL_LOG'], 'a') as f:\n"
             "    f.write(json.dumps(sys.argv[1:]) + '\\n')\n"
             "if '--images' in sys.argv: print('ragflow-local:test')\n"
-            "if sys.argv[1:3] == ['image', 'inspect']: print('sha256:' + 'a' * 64)\n"
+            "if sys.argv[1:3] == ['image', 'inspect']:\n"
+            "    print(os.environ.get('IMAGE_MODE', 'prod') if 'org.ragflow.mode' in ' '.join(sys.argv) else 'sha256:' + 'a' * 64)\n"
             "if os.environ.get('FAIL_APP') and 'ragflow-app' in sys.argv:\n"
             "    sys.exit(17)\n"
         )
@@ -113,6 +114,24 @@ class DockerCliTests(unittest.TestCase):
         stops = [call for call in self.calls() if "stop" in call]
         self.assertIn("ragflow-app", stops[0])
         self.assertIn("ragflow-storage", stops[1])
+
+    def test_dev_mode_selects_frontend_overlay(self):
+        (self.env_dir / "app.env").write_text("APP_MODE=dev\n")
+        self.env["IMAGE_MODE"] = "dev"
+        self.run_cli("recreate", "app")
+        up = next(call for call in self.calls() if "up" in call)
+        self.assertTrue(any(arg.endswith("compose.dev.yml") for arg in up))
+        self.assertIn("--force-recreate", up)
+
+    def test_image_mode_mismatch_prevents_recreation(self):
+        (self.env_dir / "app.env").write_text("APP_MODE=dev\n")
+        self.run_cli("recreate", "app", success=False)
+        self.assertFalse(any("up" in call for call in self.calls()))
+
+    def test_invalid_mode_fails_before_docker(self):
+        (self.env_dir / "app.env").write_text("APP_MODE=invalid\n")
+        self.run_cli("start", "app", success=False)
+        self.assertEqual(self.calls(), [])
 
     def test_all_recreate_stops_app_before_changing_storage(self):
         self.run_cli("recreate", "all")

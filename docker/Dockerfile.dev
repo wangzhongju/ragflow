@@ -1,0 +1,50 @@
+FROM ubuntu:24.04 AS base
+USER root
+SHELL ["/bin/bash", "-c"]
+WORKDIR /ragflow
+ENV DEBIAN_FRONTEND=noninteractive \
+    PATH="/opt/python/bin:${PATH}" \
+    PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=/ragflow \
+    NLTK_DATA=/usr/local/share/nltk_data \
+    TIKA_SERVER_JAR=file:///ragflow/tika-server-standard-3.3.0.jar \
+    UV_PYTHON_DOWNLOADS=never UV_HTTP_TIMEOUT=200 UV_HTTP_RETRIES=3 \
+    DOTNET_SYSTEM_GLOBALIZATION_INVARIANT=1
+
+# docker.sh fetch/build verifies this host cache before Docker starts.
+# SSH tunnel configuration belongs to docker/env/build.env, never the image.
+COPY docker/runtime/install-system.sh /tmp/install-system.sh
+RUN --mount=type=bind,source=third_partys,target=/third_partys,readonly \
+    --mount=type=cache,id=ragflow_apt,target=/var/cache/apt,sharing=locked \
+    bash /tmp/install-system.sh /third_partys && rm /tmp/install-system.sh
+COPY docker/config/nginx/nginx.conf docker/config/nginx/proxy.conf /etc/nginx/
+COPY docker/config/nginx/ragflow.conf.* /etc/nginx/conf.d/
+
+FROM base AS builder
+RUN --mount=type=cache,id=ragflow_apt,target=/var/cache/apt,sharing=locked \
+    apt-get -o Acquire::Retries=5 update && \
+    apt-get install -y --no-install-recommends build-essential libpython3-dev libicu-dev libgbm-dev
+COPY pyproject.toml uv.lock ./
+RUN --mount=type=cache,id=ragflow_uv,target=/root/.cache/uv,sharing=locked \
+    CC=gcc CXX=g++ AR=ar uv sync --python /opt/python/bin/python3.13 --frozen --no-install-project && \
+    .venv/bin/python3 -m ensurepip --upgrade
+COPY web/package.json web/package-lock.json web/.npmrc ./web/
+RUN --mount=type=cache,id=ragflow_npm,target=/root/.npm,sharing=locked \
+    cd web && NODE_OPTIONS=--max-old-space-size=8192 npm ci
+RUN --mount=type=bind,source=.git,target=/ragflow/.git \
+    git describe --tags --match=v* --first-parent --always > /ragflow/VERSION
+
+FROM base AS runtime
+ENV VIRTUAL_ENV=/ragflow/.venv PATH="/ragflow/.venv/bin:${PATH}"
+COPY --from=builder /ragflow/.venv /ragflow/.venv
+COPY --from=builder /ragflow/VERSION /opt/ragflow-runtime/VERSION
+COPY --from=builder /ragflow/VERSION /ragflow/VERSION
+COPY docker/runtime /ragflow/docker/runtime
+COPY docker/runtime/entrypoint.sh /ragflow/entrypoint.sh
+COPY docker/config/service_conf.ci.yaml.template /ragflow/conf/service_conf.yaml.template
+COPY bin /ragflow/bin
+COPY --from=builder /ragflow/web/node_modules /ragflow/web/node_modules
+RUN mkdir -p /ragflow/web/dist
+ENV APP_MODE=dev
+LABEL org.ragflow.mode=dev
+# Application and frontend sources are supplied by the checkout bind mount.
+ENTRYPOINT ["bash", "/ragflow/docker/runtime/entrypoint-mounted.sh"]

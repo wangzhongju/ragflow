@@ -90,7 +90,7 @@ Rules:
 ### Backend
 ```bash
 uv sync --python 3.13 --all-extras
-uv run python3 ragflow_deps/download_deps.py
+python3 docker/scripts/fetch_artifacts.py
 bash docker/docker.sh start storage
 source .venv/bin/activate
 export PYTHONPATH=$(pwd)
@@ -113,7 +113,7 @@ npm run type-check
 
 ### Go
 ```bash
-uv run ragflow_deps/download_deps.py
+uv run ragflow_deps/download_go_deps.py
 bash build.sh --test ./path/to/package/...
 bash build.sh --go
 # or build specific binaries:

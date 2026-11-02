@@ -153,9 +153,9 @@ For this checkout, follow [Docker deployment](docker/README.md) and the [operati
 See [Docker build commands](docker/README.md) and the [operations manual](docs/operations.html). Runtime deployments bind-mount the checkout.
 
 ```bash
-bash docker/docker.sh build runtime
-# Full dependency/frontend build:
-bash docker/docker.sh build source ragflow-local:my-release
+bash docker/docker.sh fetch
+bash docker/docker.sh build dev ragflow-local:dev
+bash docker/docker.sh build prod ragflow-local:prod
 ```
 
 ## 🔨 Launch Service from Source for Development

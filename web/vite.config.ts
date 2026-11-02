@@ -202,6 +202,9 @@ export default defineConfig(({ mode }) => {
       strictPort: false,
       hmr: {
         overlay: false,
+        clientPort: env.VITE_HMR_CLIENT_PORT
+          ? Number(env.VITE_HMR_CLIENT_PORT)
+          : undefined,
       },
       proxy,
     },

@@ -11,10 +11,11 @@ help() {
   cat <<'EOF'
 Usage: docker/docker.sh COMMAND ROLE [ARGS]
 
-  init --app-ip IP --storage-ip IP [--app-memory 8g]
+  init --app-ip IP --storage-ip IP [--app-memory 8g] [--app-mode dev|prod]
                               Generate matching env files once; never overwrite.
-  build runtime [TAG]         Build the pinned runtime image (source is mounted).
-  build source TAG [ARGS]     Build docker/Dockerfile from the repository root.
+  fetch [--check]             Cache/verify official artifacts in third_partys.
+  build dev TAG [ARGS]        Build Dockerfile.dev for frontend hot reload.
+  build prod TAG [ARGS]       Build Dockerfile with compiled frontend assets.
   pull app|storage            Download the configured images explicitly.
   start app|storage|all       Start and wait for health (no implicit pull).
   recreate app|storage|all    Recreate containers and wait; retain volumes.
@@ -39,11 +40,15 @@ EOF
 
 compose() {
   local role=$1; shift
+  local files=(-f "$DIR/compose/compose.$role.yml")
+  if [[ $role == app && ${APP_MODE:-prod} == dev ]]; then
+    files+=(-f "$DIR/compose/compose.dev.yml")
+  fi
   # Explicit project, env and project directory prevent caller-directory drift.
   env -u COMPOSE_PROFILES -u COMPOSE_FILE -u COMPOSE_PROJECT_NAME \
     docker compose --project-directory "$DIR/compose" \
     --env-file "$RAGFLOW_ENV_DIR/$role.env" --project-name "ragflow-$role" \
-    -f "$DIR/compose/compose.$role.yml" "$@"
+    "${files[@]}" "$@"
 }
 
 validate() {
@@ -59,10 +64,12 @@ start() {
     compose storage exec -T --user root elasticsearch sh /opt/ragflow-ops/configure_storage.sh
     compose storage up -d --pull never --wait --wait-timeout 300 "$@" kibana redisinsight
   else
-    local image image_id
+    local image image_id image_mode
     image=$(compose app config --images)
     image_id=$(docker image inspect -f '{{.Id}}' "$image")
     [[ $image_id =~ ^sha256:[a-f0-9]{64}$ ]] || die 'Cannot resolve application image ID'
+    image_mode=$(docker image inspect -f '{{index .Config.Labels "org.ragflow.mode"}}' "$image")
+    [[ $image_mode == "$APP_MODE" ]] || die "Image mode '$image_mode' does not match APP_MODE=$APP_MODE"
     export RAGFLOW_RUNTIME_KEY=${image_id#sha256:}
     mkdir -p "$DIR/state" "$DIR/home"
     chmod 700 "$DIR/state"
@@ -80,15 +87,12 @@ shift || true
 case "$action" in
   help|-h|--help) help; exit ;;
   init) exec python3 "$DIR/scripts/init_env.py" "$@" ;;
+  fetch) exec bash "$DIR/scripts/build.sh" fetch "$@" ;;
   build)
     kind=${1:-}; [[ $# -gt 0 ]] && shift
     case "$kind" in
-      runtime) [[ $# -le 1 ]] || die 'build runtime accepts one tag'; exec bash "$DIR/scripts/build_runtime.sh" "$@" ;;
-      source)
-        [[ $# -ge 1 ]] || die 'build source requires an image tag'
-        tag=$1; shift
-        exec docker build -f "$DIR/Dockerfile" -t "$tag" "$@" "$ROOT" ;;
-      *) die 'Use build runtime [TAG] or build source TAG [docker build arguments]' ;;
+      dev|prod) exec bash "$DIR/scripts/build.sh" "$kind" "$@" ;;
+      *) die 'Use build dev|prod TAG [docker build arguments]' ;;
     esac ;;
   start|recreate|stop|restart|down|status|config|pull|logs|into|exec) ;;
   *) die "Unknown command: $action (see help)" ;;
@@ -97,6 +101,15 @@ esac
 role=${1:-}
 case "$role" in app|storage|all) shift ;; *) die 'Specify role: app, storage or all' ;; esac
 if [[ $role == app || $role == all ]]; then
+  APP_MODE=prod
+  if [[ -f $RAGFLOW_ENV_DIR/app.env ]]; then
+    while IFS= read -r line || [[ -n $line ]]; do
+      line=${line%$'\r'}
+      [[ $line != APP_MODE=* ]] || APP_MODE=${line#APP_MODE=}
+    done < "$RAGFLOW_ENV_DIR/app.env"
+  fi
+  [[ $APP_MODE == dev || $APP_MODE == prod ]] || die 'APP_MODE must be dev or prod'
+  export APP_MODE
   export DOCKER_USER=${SUDO_USER:-$(id -un)}
   export DOCKER_USER_ID=$(id -u "$DOCKER_USER")
   export DOCKER_GRP=$(id -gn "$DOCKER_USER")

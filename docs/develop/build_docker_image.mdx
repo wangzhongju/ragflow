@@ -12,9 +12,9 @@ sidebar_custom_props: {
 This checkout mounts application source into its runtime container. See the [Docker directory](../../docker/README.md) and [operations manual](../operations.html#mount).
 
 ```bash
-bash docker/docker.sh build runtime ragflow-local:v0.27.2-runtime
-# Full Python dependency and frontend rebuild, after preparing ragflow_deps:
-bash docker/docker.sh build source ragflow-local:my-release
+bash docker/docker.sh fetch
+bash docker/docker.sh build dev ragflow-local:dev
+bash docker/docker.sh build prod ragflow-local:prod
 ```
 
-Set `RAGFLOW_IMAGE` in `docker/env/app.env`, then run `bash docker/docker.sh recreate app`. A Python source-only edit requires `restart app`, without rebuilding the runtime image. Dependency and frontend build prerequisites are defined by `docker/Dockerfile`; the build context is the repository root.
+Set matching `APP_MODE=dev` / `prod` and `RAGFLOW_IMAGE` in `docker/env/app.env`, then run `bash docker/docker.sh recreate app`. Development uses Vite with mounted source and hot updates; production serves compiled assets. Python edits require `restart app`. See the Docker README for the optional SSH proxy tunnel and verified local resource cache.

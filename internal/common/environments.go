@@ -230,29 +230,12 @@ const (
 // in-process (Go) DeepDoc backend requires to serve. The Go backend consumes
 // the FlatBuffer (.ort) serialization — the static ONNX Runtime build linked
 // into the Go binary supports .ort only, not the protobuf .onnx format. The
-// Python DeepDoc service keeps the legacy .onnx files and lists them
-// independently (see deepdoc/server/download_deps.py), so this slice must NOT
-// re-add the .onnx names; it is the Go presence check, not a shared list.
+// Python DeepDoc uses .onnx files from the same third_partys model cache.
+// This slice is the Go presence check and lists only its required .ort files.
 // cmd/ resolves the model directory against it; the native analyzer validates
 // file presence against it via HasModelFiles. Order is insignificant (callers
 // do set-membership checks); keep it stable so logs and diffs stay readable.
 //
-// External consumers that re-list these names must stay in sync:
-//   - ragflow_deps/download_go_deps.py re-lists them as DEEPDOC_MODEL_FILES
-//     (it fetches the files one by one, so it MUST be edited by hand when this
-//     slice changes);
-//   - ragflow_deps/download_deps.py snapshots the whole InfiniFlow/deepdoc repo
-//     (so .ort lands in the model dir automatically — no FILES edit needed);
-//   - deepdoc/server/download_deps.py (the Python-only Dockerfile_deepdoc_oss
-//     image) keeps the .onnx list and must NOT be changed to .ort.
-var DeepDocModelFiles = []string{
-	"det.ort",
-	"layout.ort",
-	"tsr.ort",
-	"rec.ort",
-	"ocr.res",
-}
-
 // HasModelFiles reports whether dir contains every file listed in
 // DeepDocModelFiles. It is the single presence check shared by the server
 // (cmd/ragflow_server.go) and the in-process analyzer (infnative:
@@ -268,8 +251,8 @@ func HasModelFiles(dir string) bool {
 
 // DeepDocORTVersion is the onnxruntime native release the in-process (Go)
 // DeepDoc backend is built and tested against (e.g. "1.23.2"). It is ONE OF
-// THREE raw version declarations that must stay equal (the other two are
-// ORT_VERSION in ragflow_deps/download_go_deps.py and ragflow_deps/download_deps.py)
+// TWO raw version declarations that must stay equal (the other is
+// ORT_VERSION in ragflow_deps/download_go_deps.py)
 // — NOT a single source of truth. The download URL and extracted dir name are
 // built from those ORT_VERSION constants, not from this one. The Go binding
 // (github.com/infiniflow/onnxruntime_go, the org mirror of yalue/onnxruntime_go)
@@ -281,8 +264,7 @@ func HasModelFiles(dir string) bool {
 //
 // To bump ORT, ALL of the following must change together (drift breaks the
 // static link or the runtime OrtGetApiBase lookup):
-//   - DeepDocORTVersion (here, Go) AND ORT_VERSION in BOTH
-//     ragflow_deps/download_go_deps.py and ragflow_deps/download_deps.py;
+//   - DeepDocORTVersion (here, Go) and ORT_VERSION in ragflow_deps/download_go_deps.py;
 //   - the onnxruntime== pin in pyproject.toml and the onnxruntime /
 //     onnxruntime-gpu pins in .github/workflows/deepdoc-drift.yml;
 //   - the onnxruntime_go binding minor in go.mod.

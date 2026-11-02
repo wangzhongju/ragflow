@@ -199,7 +199,11 @@ PY=python3
 # Select Nginx Configuration based on API_PROXY_SCHEME
 # -----------------------------------------------------------------------------
 NGINX_CONF_DIR="/etc/nginx/conf.d"
-if [ -n "$API_PROXY_SCHEME" ]; then
+if [[ ${APP_MODE:-prod} == dev ]]; then
+    [[ ${API_PROXY_SCHEME:-python} == python ]] || { echo 'The dev frontend requires the Python backend'; exit 1; }
+    cp -f "$NGINX_CONF_DIR/ragflow.conf.dev" "$NGINX_CONF_DIR/ragflow.conf"
+    echo "Applied nginx config: ragflow.conf.dev (Vite hot reload)"
+elif [ -n "$API_PROXY_SCHEME" ]; then
     if [[ "${API_PROXY_SCHEME}" == "hybrid" ]]; then
         cp -f "$NGINX_CONF_DIR/ragflow.conf.hybrid" "$NGINX_CONF_DIR/ragflow.conf"
         echo "Applied nginx config: ragflow.conf.hybrid"
@@ -311,6 +315,12 @@ fi
 
 if [[ "${ENABLE_WEBSERVER}" -eq 1 ]]; then
     ensure_docling
+
+    if [[ ${APP_MODE:-prod} == dev ]]; then
+        export VITE_HMR_CLIENT_PORT="${APP_WEB_PORT:-8088}"
+        run_with_restart "Vite frontend" runuser -u "$DOCKER_USER" -- \
+            bash -c 'cd /ragflow/web && exec npm run dev -- --host 127.0.0.1 --port 9222 --strictPort' &
+    fi
 
     echo "Starting nginx..."
     /usr/sbin/nginx -c /etc/nginx/nginx.conf

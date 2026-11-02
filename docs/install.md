@@ -20,4 +20,4 @@ python /opt/ragflow-ops/inspect_task.py
 exit
 ```
 
-历史补丁已存在于当前工程源码，挂载后直接生效；不再构建只拷贝少数 Python 文件的补丁镜像。完整依赖/前端构建仍可使用 `docker/Dockerfile`，运行环境镜像使用 `docker/Dockerfile.runtime`。
+历史补丁已存在于当前工程源码，挂载后直接生效；不再构建只拷贝少数 Python 文件的补丁镜像。完整依赖/前端构建仍可使用 `docker/Dockerfile`，开发镜像使用 `docker/Dockerfile.dev`。

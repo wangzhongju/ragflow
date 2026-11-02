@@ -1,0 +1,218 @@
+{
+  "schema_version": 1,
+  "platform": "linux/amd64",
+  "files": [
+    {
+      "path": "models/InfiniFlow/deepdoc/README.md",
+      "url": "https://huggingface.co/InfiniFlow/deepdoc/resolve/9c7aa2c730d7a242d7f04cf6109a6a239aefc717/README.md",
+      "sha256": "a083f9c317aa0bda6ceca5a1dec4055066e2d3f98c76f20be9142b45223fcc50",
+      "size": 119
+    },
+    {
+      "path": "models/InfiniFlow/deepdoc/det.onnx",
+      "url": "https://huggingface.co/InfiniFlow/deepdoc/resolve/9c7aa2c730d7a242d7f04cf6109a6a239aefc717/det.onnx",
+      "sha256": "30a86f5731181461d08021402766601e4302a9b9b9666be8aff402696339cdff",
+      "size": 4745517
+    },
+    {
+      "path": "models/InfiniFlow/deepdoc/det.ort",
+      "url": "https://huggingface.co/InfiniFlow/deepdoc/resolve/9c7aa2c730d7a242d7f04cf6109a6a239aefc717/det.ort",
+      "sha256": "fd62614cbae0b073aa203b2393081e641826ecfc85414669458506d91e23c095",
+      "size": 4885936
+    },
+    {
+      "path": "models/InfiniFlow/deepdoc/layout.laws.onnx",
+      "url": "https://huggingface.co/InfiniFlow/deepdoc/resolve/9c7aa2c730d7a242d7f04cf6109a6a239aefc717/layout.laws.onnx",
+      "sha256": "de401c03ee30b1c120416dc06f0705237f0c36d3cdb692c9bfefe8a8f98a4b70",
+      "size": 75726930
+    },
+    {
+      "path": "models/InfiniFlow/deepdoc/layout.laws.ort",
+      "url": "https://huggingface.co/InfiniFlow/deepdoc/resolve/9c7aa2c730d7a242d7f04cf6109a6a239aefc717/layout.laws.ort",
+      "sha256": "8f4dcc3771c53c2eefc4472a6bd4133017ff3392f870cd8bd3ff040a87a01f54",
+      "size": 75986208
+    },
+    {
+      "path": "models/InfiniFlow/deepdoc/layout.manual.onnx",
+      "url": "https://huggingface.co/InfiniFlow/deepdoc/resolve/9c7aa2c730d7a242d7f04cf6109a6a239aefc717/layout.manual.onnx",
+      "sha256": "de401c03ee30b1c120416dc06f0705237f0c36d3cdb692c9bfefe8a8f98a4b70",
+      "size": 75726930
+    },
+    {
+      "path": "models/InfiniFlow/deepdoc/layout.manual.ort",
+      "url": "https://huggingface.co/InfiniFlow/deepdoc/resolve/9c7aa2c730d7a242d7f04cf6109a6a239aefc717/layout.manual.ort",
+      "sha256": "a464bad88bc9707cd9fd63671c832b5a3a37ed0d3766d04d8224dbbe8a278a89",
+      "size": 75986208
+    },
+    {
+      "path": "models/InfiniFlow/deepdoc/layout.onnx",
+      "url": "https://huggingface.co/InfiniFlow/deepdoc/resolve/9c7aa2c730d7a242d7f04cf6109a6a239aefc717/layout.onnx",
+      "sha256": "de401c03ee30b1c120416dc06f0705237f0c36d3cdb692c9bfefe8a8f98a4b70",
+      "size": 75726930
+    },
+    {
+      "path": "models/InfiniFlow/deepdoc/layout.ort",
+      "url": "https://huggingface.co/InfiniFlow/deepdoc/resolve/9c7aa2c730d7a242d7f04cf6109a6a239aefc717/layout.ort",
+      "sha256": "55e3e5743ba2f2a03879578ac818089afa32bdedda51159d340bc2eec968b030",
+      "size": 75986208
+    },
+    {
+      "path": "models/InfiniFlow/deepdoc/layout.paper.onnx",
+      "url": "https://huggingface.co/InfiniFlow/deepdoc/resolve/9c7aa2c730d7a242d7f04cf6109a6a239aefc717/layout.paper.onnx",
+      "sha256": "de401c03ee30b1c120416dc06f0705237f0c36d3cdb692c9bfefe8a8f98a4b70",
+      "size": 75726930
+    },
+    {
+      "path": "models/InfiniFlow/deepdoc/layout.paper.ort",
+      "url": "https://huggingface.co/InfiniFlow/deepdoc/resolve/9c7aa2c730d7a242d7f04cf6109a6a239aefc717/layout.paper.ort",
+      "sha256": "6f6843d301af5dd652969232aab95aafd267923141985edef8ba8ab4ac838764",
+      "size": 75986208
+    },
+    {
+      "path": "models/InfiniFlow/deepdoc/ocr.res",
+      "url": "https://huggingface.co/InfiniFlow/deepdoc/resolve/9c7aa2c730d7a242d7f04cf6109a6a239aefc717/ocr.res",
+      "sha256": "28b2362ad4ab2dc38769aa72feb535e3a9ddb3fd2a7585a05920e6393b1dc7f7",
+      "size": 26249
+    },
+    {
+      "path": "models/InfiniFlow/deepdoc/rec.onnx",
+      "url": "https://huggingface.co/InfiniFlow/deepdoc/resolve/9c7aa2c730d7a242d7f04cf6109a6a239aefc717/rec.onnx",
+      "sha256": "1c7cf60de2afd728d512f4190cf37455092b45f06175365c6fc58d8cd7e2a68b",
+      "size": 10826336
+    },
+    {
+      "path": "models/InfiniFlow/deepdoc/rec.ort",
+      "url": "https://huggingface.co/InfiniFlow/deepdoc/resolve/9c7aa2c730d7a242d7f04cf6109a6a239aefc717/rec.ort",
+      "sha256": "a6eb83a8943d2dca6de8e1393420904bddd4dded455d72ca177ade63b56533d0",
+      "size": 10959944
+    },
+    {
+      "path": "models/InfiniFlow/deepdoc/tsr.onnx",
+      "url": "https://huggingface.co/InfiniFlow/deepdoc/resolve/9c7aa2c730d7a242d7f04cf6109a6a239aefc717/tsr.onnx",
+      "sha256": "1585f88015c60209f16a079a26d944afca790ab7022fe7d0574113ccb9a6f9b4",
+      "size": 12243033
+    },
+    {
+      "path": "models/InfiniFlow/deepdoc/tsr.ort",
+      "url": "https://huggingface.co/InfiniFlow/deepdoc/resolve/9c7aa2c730d7a242d7f04cf6109a6a239aefc717/tsr.ort",
+      "sha256": "24930ee6d025dc8e5c17587713d74a7d665d3ca8a464df015afb6e939af0d2f7",
+      "size": 12343760
+    },
+    {
+      "path": "models/InfiniFlow/text_concat_xgb_v1.0/README.md",
+      "url": "https://huggingface.co/InfiniFlow/text_concat_xgb_v1.0/resolve/722ed09a54f23f14fe0279ce6b74ce18e1960f54/README.md",
+      "sha256": "485eee181a91065ddb2880ac341a57136be6259c80860f7ef768784af47956ff",
+      "size": 307
+    },
+    {
+      "path": "models/InfiniFlow/text_concat_xgb_v1.0/updown_concat_xgb.model",
+      "url": "https://huggingface.co/InfiniFlow/text_concat_xgb_v1.0/resolve/722ed09a54f23f14fe0279ce6b74ce18e1960f54/updown_concat_xgb.model",
+      "sha256": "50516159cd0aab5f3499e1edccffdf1d6141f5ae513fdba003a18cbefa823f62",
+      "size": 5906150
+    },
+    {
+      "path": "archives/nltk/omw-1.4.zip",
+      "url": "https://raw.githubusercontent.com/nltk/nltk_data/550b6625bcef1f2abff2ff770a5a0d272c9c6b2a/packages/corpora/omw-1.4.zip",
+      "extract_to": "nltk_data/corpora",
+      "extracted_root": "omw-1.4",
+      "sha256": "3b941e664852f3297b6040236626065796a2aaf7d7f9eec8779a3beaa1096c2d",
+      "size": 26634772
+    },
+    {
+      "path": "archives/nltk/wordnet.zip",
+      "url": "https://raw.githubusercontent.com/nltk/nltk_data/550b6625bcef1f2abff2ff770a5a0d272c9c6b2a/packages/corpora/wordnet.zip",
+      "extract_to": "nltk_data/corpora",
+      "extracted_root": "wordnet",
+      "sha256": "cbda5ea6eef7f36a97a43d4a75f85e07fccbb4f23657d27b4ccbc93e2646ab59",
+      "size": 10775600
+    },
+    {
+      "path": "archives/nltk/punkt.zip",
+      "url": "https://raw.githubusercontent.com/nltk/nltk_data/550b6625bcef1f2abff2ff770a5a0d272c9c6b2a/packages/tokenizers/punkt.zip",
+      "extract_to": "nltk_data/tokenizers",
+      "extracted_root": "punkt",
+      "sha256": "51c3078994aeaf650bfc8e028be4fb42b4a0d177d41c012b6a983979653660ec",
+      "size": 13905355
+    },
+    {
+      "path": "archives/nltk/punkt_tab.zip",
+      "url": "https://raw.githubusercontent.com/nltk/nltk_data/550b6625bcef1f2abff2ff770a5a0d272c9c6b2a/packages/tokenizers/punkt_tab.zip",
+      "extract_to": "nltk_data/tokenizers",
+      "extracted_root": "punkt_tab",
+      "sha256": "e57f64187974277726a3417ca6f181ec5403676c717672eef6a748a7b20e0106",
+      "size": 4319076
+    },
+    {
+      "path": "archives/node/node-linux-x64.tar.xz",
+      "url": "https://nodejs.org/dist/v22.23.4/node-v22.23.4-linux-x64.tar.xz",
+      "sha256": "1805bcd35e6815559bd2eb97db438d3fdb0eb3a5e6a977b7c1badca76337e9ce",
+      "size": 31029996
+    },
+    {
+      "path": "archives/python/cpython-linux-x64.tar.gz",
+      "url": "https://github.com/astral-sh/python-build-standalone/releases/download/20251205/cpython-3.13.11%2B20251205-x86_64-unknown-linux-gnu-install_only_stripped.tar.gz",
+      "sha256": "f8a1b7f6d51c6a2346d0c193e70d84823b37aaa791f93d972cd2b10ee6b5ee81",
+      "size": 34265032
+    },
+    {
+      "path": "archives/uv/uv-linux-x64.tar.gz",
+      "url": "https://github.com/astral-sh/uv/releases/download/0.9.16/uv-x86_64-unknown-linux-gnu.tar.gz",
+      "sha256": "3adbf5322471b53a61483b4a5d091e70c32231ebc63fd327fae7b844cbcd3e01",
+      "size": 22049587
+    },
+    {
+      "path": "archives/chrome/chrome-linux64.zip",
+      "url": "https://storage.googleapis.com/chrome-for-testing-public/121.0.6167.85/linux64/chrome-linux64.zip",
+      "sha256": "0d4c2fbb4db86121bc72450cb9e8659335a72c1719c348e32331cf512ab1487c",
+      "size": 149587479
+    },
+    {
+      "path": "archives/chrome/chromedriver-linux64.zip",
+      "url": "https://storage.googleapis.com/chrome-for-testing-public/121.0.6167.85/linux64/chromedriver-linux64.zip",
+      "sha256": "3bc538a59efafcdeeaf5b57b77403ec2522aa9aa33e96c9f6503b87085760883",
+      "size": 8643026
+    },
+    {
+      "path": "stagehand/stagehand-server-v3-linux-x64",
+      "url": "https://github.com/browserbase/stagehand/releases/download/stagehand-server-v3/v3.7.2/stagehand-server-v3-linux-x64",
+      "sha256": "72b526042511e24c30eaab8b49bb8372c6ae1429af56eec9328f99d6db14b90f",
+      "size": 111676544
+    },
+    {
+      "path": "archives/resource/resource.tar.gz",
+      "url": "https://codeload.github.com/infiniflow/resource/tar.gz/0937399b60f1949267388548e33ea0d5c0cc25f7",
+      "sha256": "3451346399a61a38220e770c685f0a393fa3ad2ce924511f7706c3949bd90cb3",
+      "size": 128863711
+    },
+    {
+      "path": "tika/tika-server-standard-3.3.0.jar",
+      "url": "https://archive.apache.org/dist/tika/3.3.0/tika-server-standard-3.3.0.jar",
+      "sha256": "2aca63d25f84774d759de6e132ae7f5723e3ee2adf1d51f585658baba1335e9b",
+      "size": 81853424
+    },
+    {
+      "path": "tiktoken/cl100k_base.tiktoken",
+      "url": "https://openaipublic.blob.core.windows.net/encodings/cl100k_base.tiktoken",
+      "sha256": "223921b76ee99bde995b7ff738513eef100fb51d18c93597a113bcffe865b2a7",
+      "size": 1681126
+    },
+    {
+      "path": "packages/libssl1.1.deb",
+      "url": "https://archive.ubuntu.com/ubuntu/pool/main/o/openssl/libssl1.1_1.1.1f-1ubuntu2_amd64.deb",
+      "sha256": "09ee28588a1fb5613ddc6c26a992d5a76931b3cf22c022930da413a5e580599e",
+      "size": 1318204
+    },
+    {
+      "path": "keys/nginx_signing.key",
+      "url": "https://nginx.org/keys/nginx_signing.key",
+      "sha256": "55385da31d198fa6a5012d40ae98ecb272a6c4e8fffffba94719ffd3e87de37a",
+      "size": 11809
+    },
+    {
+      "path": "keys/microsoft.asc",
+      "url": "https://packages.microsoft.com/keys/microsoft.asc",
+      "sha256": "2fa9c05d591a1582a9aba276272478c262e95ad00acf60eaee1644d93941e3c6",
+      "size": 975
+    }
+  ]
+}

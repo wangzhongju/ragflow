@@ -3,12 +3,13 @@ include:
 # To ensure that the container processes the locally modified `service_conf.yaml.template` instead of the one included in its image, you need to mount the local `service_conf.yaml.template` to the container.
 services:
   deepdoc:
-    image: ${DEEPDOC_IMAGE:-deepdoc_oss:latest}
-    profiles:
-      - deepdoc
+    image: ${RAGFLOW_IMAGE}-deepdoc
     build:
       context: ../..
-      dockerfile: docker/Dockerfile.deepdoc
+      dockerfile: docker/Dockerfile
+      target: deepdoc
+    profiles:
+      - deepdoc
     networks:
       - ragflow
     restart: unless-stopped

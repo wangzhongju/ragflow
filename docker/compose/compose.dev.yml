@@ -1,0 +1,9 @@
+# Applied by docker.sh when app.env selects APP_MODE=dev.
+services:
+  ragflow:
+    volumes:
+      - node_modules:/ragflow/web/node_modules
+
+volumes:
+  node_modules:
+    name: ragflow-app_node_${RAGFLOW_RUNTIME_KEY:-unprepared}

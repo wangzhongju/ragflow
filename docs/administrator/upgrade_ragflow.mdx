@@ -13,4 +13,4 @@ Back up the storage and matching application configuration before upgrading. Fol
 
 The application runs the host checkout mounted at `/ragflow`. Update source and dependencies as one reviewed release. Set `RAGFLOW_IMAGE` in `docker/env/app.env`, then use `bash docker/docker.sh recreate app`. Runtime dependency volumes are keyed by image ID and old volumes are retained for rollback.
 
-Do not replace the pinned runtime image with an arbitrary upstream tag: the mounted deployment requires the runtime assets prepared by `docker/Dockerfile.runtime` or the full `docker/Dockerfile`.
+Do not replace the pinned runtime image with an arbitrary upstream tag: the mounted deployment requires the runtime assets prepared by `docker/Dockerfile.dev` or the full `docker/Dockerfile`.

@@ -71,11 +71,8 @@ STOP=false
 # Array to keep track of child PIDs
 PIDS=()
 
-# Set the path to the NLTK data directory
-# download_deps.py downloads NLTK data into ragflow_deps/nltk_data (see
-# ragflow_deps/download_deps.py); point NLTK_DATA there directly instead of a
-# stale top-level ./nltk_data so this matches what's actually populated.
-export NLTK_DATA="$(pwd)/ragflow_deps/nltk_data"
+# Shared official resource cache prepared with docker.sh fetch.
+export NLTK_DATA="$(pwd)/third_partys/nltk_data"
 
 # Function to handle termination signals
 cleanup() {
@@ -245,13 +242,7 @@ prepare_for_go() {
         return
     fi
     mkdir -p /usr/share/infinity/resource
-    if [ "$NEED_MIRROR" == "1" ]; then
-        git clone --depth 1 --single-branch https://gitee.com/infiniflow/resource /tmp/resource;
-    else
-        git clone --depth 1 --single-branch https://github.com/infiniflow/resource.git /tmp/resource;
-    fi
-    cp -r /tmp/resource/* /usr/share/infinity/resource
-    rm -rf /tmp/resource
+    tar -xzf third_partys/archives/resource/resource.tar.gz --strip-components=1 -C /usr/share/infinity/resource
 }
 
 START_RAGFLOW=0

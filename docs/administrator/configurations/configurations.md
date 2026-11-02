@@ -13,7 +13,7 @@ This checkout uses `docker/env/app.env` and `docker/env/storage.env`, generated 
 | --- | --- |
 | `APP_IP`, `APP_WEB_PORT`, `APP_API_PORT`, `APP_ADMIN_PORT` | Application bind address and published ports; defaults 8088/9380/9381. |
 | `APP_MEM_LIMIT`, `APP_MEM_RESERVATION` | Per-host application memory settings. |
-| `RAGFLOW_IMAGE` | Runtime image built with `Dockerfile.runtime`, or full image built with `Dockerfile`. |
+| `RAGFLOW_IMAGE` | Development image built with `Dockerfile.dev`, or full image built with `Dockerfile`. |
 | `APP_WEB_DIST` | Optional absolute path to host-built `web/dist`; otherwise image frontend assets are used. |
 | `STORAGE_IP` | Storage host bind address. |
 | `MYSQL_HOST`, `MYSQL_PORT`, `MYSQL_USER`, `MYSQL_DBNAME`, `MYSQL_PASSWORD` | Application metadata connection. |

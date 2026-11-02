@@ -22,7 +22,7 @@ STRIP_SYMBOLS=""
 
 # Native static library settings. These are the user-cache paths (~/ragflow-native-libs/).
 # If /opt/ragflow-native-libs/ exists (pre-seeded in CI runner image), it takes priority
-# and skips the network (download_deps.py) fallback.
+# and skips the network (download_go_deps.py) fallback.
 SYSTEM_DEPS="/opt/ragflow-native-libs"
 
 # office_oxide native library settings — static linking
@@ -43,7 +43,7 @@ PDF_OXIDE_VERSION="0.3.73"
 # is then resolved via dlopen(NULL) (the process-global symbol table, not the
 # executable's own path), so no libonnxruntime.so is needed at runtime.
 # Downloaded by ragflow_deps/download_go_deps.py (and
-# ragflow_deps/download_deps.py) into onnxruntime/static_lib.
+# ragflow_deps/download_go_deps.py) into onnxruntime/static_lib.
 ONNXRUNTIME_STATIC_PREFIX="${HOME}/ragflow-native-libs/onnxruntime/static_lib"
 
 # Copy a dependency from the system pre-seed directory to the user cache.
@@ -553,7 +553,7 @@ setup_cgo_env() {
             # Guard against coexisting stale version dirs: if .a files span
             # more than one onnxruntime-linux-x64-static_lib-* dir, fail fast
             # instead of silently linking two ORT versions (duplicate symbols
-            # / wrong version). Re-run `download_deps.py` to prune stale dirs
+            # / wrong version). Re-run `download_go_deps.py` to prune stale dirs
             # after a version bump, or remove the old dir by hand.
             case "$f" in
                 */onnxruntime-linux-x64-static_lib-*/lib/*.a)
@@ -564,7 +564,7 @@ setup_cgo_env() {
                     elif [ "$seen_version_dir" != "$vdir" ]; then
                         echo "  Error: multiple ONNX Runtime versions found under $ONNXRUNTIME_STATIC_PREFIX" >&2
                         echo "    $seen_version_dir  AND  $vdir" >&2
-                        echo "  Remove the stale version dir (or re-run download_deps.py to prune it)." >&2
+                        echo "  Remove the stale version dir (or re-run download_go_deps.py to prune it)." >&2
                         return 1
                     fi
                     ;;

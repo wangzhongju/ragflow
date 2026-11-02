@@ -66,6 +66,11 @@ def main():
         return [path.name for path in paths]
 
     def frontend():
+        if os.environ.get("APP_MODE", "prod") == "dev":
+            vite = root / "web/node_modules/.bin/vite"
+            if not vite.is_file():
+                raise FileNotFoundError(vite)
+            return {"mode": "dev", "vite": str(vite.resolve())}
         index = root / "web/dist/index.html"
         if not index.is_file() or index.stat().st_size == 0:
             raise FileNotFoundError(index)

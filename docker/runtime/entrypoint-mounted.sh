@@ -2,6 +2,15 @@
 set -euo pipefail
 cd /ragflow
 bash /ragflow/docker/runtime/env.sh
+if [[ ${APP_MODE:-prod} == dev ]]; then
+  modules=/ragflow/web/node_modules
+  [[ -x $modules/.bin/vite ]] || { echo 'Development node_modules volume is missing; recreate app with the dev image.' >&2; exit 1; }
+  # Only this generated dependency volume changes ownership, never the source tree.
+  owner="$DOCKER_USER_ID:$DOCKER_GRP_ID"
+  if [[ $(stat -c '%u:%g' "$modules") != "$owner" ]]; then
+    chown -R "$owner" "$modules"
+  fi
+fi
 # These are image dependencies, not application source. Python, models and the
 # prebuilt frontend use image-keyed volumes; the entire checkout is a bind mount.
 for asset in VERSION 9b5ad71b2ce5302211f9c61530b329a4922fc6a4 \

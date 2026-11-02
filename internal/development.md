@@ -45,7 +45,7 @@ python3 ragflow_deps/download_go_deps.py
 > **Note**: If you use IDEs like GoLand to run/debug directly (via Run/Debug buttons), or run `go build` / `go run` from command line, set these CGO environment variables:
 >
 > ```bash
-> RAGFLOW_DEPS="${HOME}/ragflow-native-libs"  # created by download_go_deps.py + download_deps.py
+> RAGFLOW_DEPS="${HOME}/ragflow-native-libs"  # created by download_go_deps.py
 > PLATFORM="linux_amd64"  # or darwin_amd64, linux_arm64, darwin_arm64
 > # NOTE: the ONNX Runtime static lib fetched by download_go_deps.py is
 > # linux-x64 ONLY (onnxruntime-linux-x64-static_lib-*). On darwin_* / non-amd64
@@ -137,8 +137,7 @@ supersedes the other, so do not delete one to "clean up".
 | Files  | `det.ort`, `layout.ort`, `tsr.ort`, `rec.ort`, `ocr.res` | `det.onnx`, `layout.onnx`, `tsr.onnx`, `rec.onnx`, `ocr.res` |
 
 `download_go_deps.py` (§1.4) fetches the five required files — four `.ort` plus
-`ocr.res` — into `rag/res/deepdoc/`; `download_deps.py` snapshots the whole
-`InfiniFlow/deepdoc` repo and therefore carries both formats.
+`ocr.res` — into `rag/res/deepdoc/`; `docker.sh fetch` caches both formats in `third_partys/models/InfiniFlow/deepdoc`.
 
 Auto-discovery is **relative to the server process's working directory**:
 `resolveDeepDocModelDir()` (`cmd/ragflow_server.go`) probes

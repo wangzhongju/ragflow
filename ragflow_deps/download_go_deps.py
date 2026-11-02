@@ -10,39 +10,9 @@
 # ]
 # ///
 
-# This script downloads every artifact the Go build needs: the native static
-# libraries (pdfium / pdf_oxide / office_oxide / onnxruntime) for `build.sh`,
-# and the Go DeepDoc `.ort` weights (det/layout/tsr/rec.ort + ocr.res) so a Go
-# dev can run the in-process backend locally without separately running
-# `download_deps.py`. Run it from anywhere — the `__main__` block chdir's into
-# this file's own directory, so all outputs land under `ragflow_deps/`
-# regardless of the caller's CWD.
-#
-# Build-context relationship: `ragflow_deps/Dockerfile` is built with
-# `ragflow_deps/` as its build context, so the files written here MUST
-# sit at the top of `ragflow_deps/`. The Dockerfile's COPY lines assume
-# top-level paths (`huggingface.co`, `nltk_data`, `cl100k_base.tiktoken`,
-# `*.deb`, `*.jar`, `*.tar.gz`, `stagehand-server-v3-linux-<arch>`).
-#
-# Typical workflow:
-#
-#   uv run python3 ragflow_deps/download_go_deps.py            # download
-#   cd ragflow_deps
-#   docker build -f Dockerfile -t infiniflow/ragflow_deps .
-#
-# The main `Dockerfile` (built from the project root) pulls this image
-# via `--mount=type=bind,from=infiniflow/ragflow_deps:latest,...` and
-# is unaffected by where these files live locally.
-#
-# Go DeepDoc weights: in addition to the native libs, this script downloads the
-# five Go model files (internal/common.DeepDocModelFiles) from InfiniFlow/deepdoc
-# straight into the repo's canonical model directory `rag/res/deepdoc/` (one level
-# up from this script). The Go server auto-discovers that directory via
-# resolveDeepDocModelDir(), and build.sh --test-native / internal/deepdoc/native/run.sh
-# default MODEL_DIR there too — so after running this script NO MODEL_DIR env needs
-# to be set:
-#
-#   bash build.sh --test-native          # or: cd internal/deepdoc/native && bash run.sh
+# Native Go development dependencies are downloaded beside this script and
+# extracted under ~/ragflow-native-libs. Application image resources are
+# managed separately by docker/scripts/fetch_artifacts.py in third_partys/.
 
 import argparse
 import os
@@ -53,10 +23,9 @@ import zipfile
 import requests
 
 # Mirrors internal/common.DeepDocORTVersion (Go in-process backend). ONE OF
-# THREE places (with that Go constant and the ORT_VERSION in
-# ragflow_deps/download_deps.py) that must carry the same ONNX Runtime native
+# TWO places (with that Go constant) that must carry the same ONNX Runtime native
 # release for the statically-linked Go DeepDoc backend. There is no single
-# source of truth — keep all three equal. The pip onnxruntime== pin
+# source of truth — keep both equal. The pip onnxruntime== pin
 # (pyproject.toml) and the onnxruntime_go binding minor (go.mod) must stay on
 # the same minor line.
 ORT_VERSION = "1.23.2"
@@ -248,8 +217,8 @@ def download_go_models(use_china_mirrors=False):
             '"no in-process DeepDoc backend serving". To recover:\n'
             "  - re-run this script (a transient HF/network error usually clears);\n"
             "  - behind the GFW, re-run with --china-mirrors (routes via hf-mirror.com);\n"
-            "  - or run `uv run python3 ragflow_deps/download_deps.py`, which snapshots\n"
-            f"    all of {DEEPDOC_REPO} (it also provides the Python-side .onnx);\n"
+            "  - or run `python3 docker/scripts/fetch_artifacts.py`, then copy the\n"
+            "    required files from third_partys/models/InfiniFlow/deepdoc;\n"
             "  - or copy the missing files into that directory by hand.",
             file=sys.stderr,
         )
@@ -263,7 +232,7 @@ if __name__ == "__main__":
     # Anchor CWD to this file's directory so all relative outputs
     # (huggingface.co/, nltk_data/, *.deb, *.jar, *.tar.gz, etc.) land
     # at the top of ragflow_deps/ regardless of where the user invokes
-    # the script from. This is the build context for `ragflow_deps/Dockerfile`.
+    # the script from. These archives support host Go/CGO builds.
     os.chdir(os.path.dirname(os.path.abspath(__file__)))
 
     parser = argparse.ArgumentParser(description="Download dependencies with optional China mirror support")

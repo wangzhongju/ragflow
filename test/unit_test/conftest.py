@@ -18,7 +18,7 @@
 
 Several parsers and the chunking pipeline tokenize text with NLTK, which needs
 the ``punkt_tab`` and ``wordnet`` data sets. Production provisions these via
-``download_deps.py`` (into ``nltk_data``, exported as ``NLTK_DATA`` by
+``fetch_artifacts.py`` (into ``nltk_data``, exported as ``NLTK_DATA`` by
 ``docker/runtime/launch_backend_service.sh``) and ``api.validation`` at startup, but the
 unit-test runner has neither. Without the data, tokenizer-backed tests such as
 ``test_epub_parser`` and ``test_dataflow_service`` fail with
@@ -38,12 +38,12 @@ os.environ.setdefault("NLTK_ALLOW_PROXIED_URLOPEN", "1")
 import nltk
 import warnings
 
-# Reuse data already fetched by download_deps.py (the directory the app exports
+# Reuse data already fetched by fetch_artifacts.py (the directory the app exports
 # as NLTK_DATA) so provisioned environments do not download it again. Create it
 # if absent so the fallback download below lands in a repo-local, reproducible
 # location instead of a shared home directory.
 _REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), os.pardir, os.pardir))
-_LOCAL_NLTK_DATA = os.path.join(_REPO_ROOT, "ragflow_deps", "nltk_data")
+_LOCAL_NLTK_DATA = os.path.join(_REPO_ROOT, "third_partys", "nltk_data")
 os.makedirs(_LOCAL_NLTK_DATA, exist_ok=True)
 if _LOCAL_NLTK_DATA not in nltk.data.path:
     nltk.data.path.insert(0, _LOCAL_NLTK_DATA)
