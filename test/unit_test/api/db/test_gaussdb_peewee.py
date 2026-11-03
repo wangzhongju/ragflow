@@ -340,25 +340,16 @@ class TestGaussDBDatabase:
 
         assert db.get_tables() == ["tenant", "user"]
 
-    def test_gaussdb_request_cleanup_returns_current_connection(self, monkeypatch):
+    @pytest.mark.parametrize("database_type", ["mysql", "oceanbase", "postgres", "gaussdb"])
+    def test_request_cleanup_returns_current_connection(self, monkeypatch, database_type):
         db = RecordingCloseDatabase()
         monkeypatch.setattr(db_models, "DB", db)
-        monkeypatch.setattr(db_models.settings, "DATABASE_TYPE", "gaussdb")
+        monkeypatch.setattr(db_models.settings, "DATABASE_TYPE", database_type)
 
         db_models.close_connection()
 
         assert db.close_calls == 1
         assert db.close_stale_calls == []
-
-    def test_non_gaussdb_cleanup_preserves_existing_behavior(self, monkeypatch):
-        db = RecordingCloseDatabase()
-        monkeypatch.setattr(db_models, "DB", db)
-        monkeypatch.setattr(db_models.settings, "DATABASE_TYPE", "mysql")
-
-        db_models.close_connection()
-
-        assert db.close_calls == 0
-        assert db.close_stale_calls == [30]
 
     def test_pooled_database_enum_values(self):
         expected = {"MYSQL", "OCEANBASE", "POSTGRES", "GAUSSDB"}

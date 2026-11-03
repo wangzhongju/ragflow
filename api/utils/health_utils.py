@@ -44,8 +44,11 @@ def _ok_nok(ok: bool) -> str:
 def check_db() -> tuple[bool, dict]:
     st = timer()
     try:
-        # lightweight probe; works for MySQL/Postgres
-        DB.execute_sql("SELECT 1")
+        # Quart may run teardown in another worker; release the probe connection
+        # here, in the same thread that acquired it.
+        with DB.connection_context():
+            cursor = DB.execute_sql("SELECT 1")
+            cursor.close()
         return True, {"elapsed": f"{(timer() - st) * 1000.0:.1f}"}
     except Exception as e:
         return False, {"elapsed": f"{(timer() - st) * 1000.0:.1f}", "error": str(e)}

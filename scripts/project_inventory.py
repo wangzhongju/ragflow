@@ -95,6 +95,7 @@ DIRECTORIES = {
 }
 
 FILES = {
+    "docker/config/vscode-attach.example.json": "附加到运行中应用容器的 VS Code 配置样例：用户、解释器、扩展和 Git 装饰。",
     "docker/Dockerfile.dev": "从本地缓存构建开发镜像，提供 Python、Node、前端依赖和 Vite 运行环境。",
     "docker/compose/compose.dev.yml": "开发模式覆盖定义，为 Vite 增加按镜像区分的可写 node_modules 卷。",
     "docker/config/artifacts.json": "官方资源 URL、固定版本/提交、大小和 SHA-256 下载清单。",

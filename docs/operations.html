@@ -235,6 +235,72 @@ exit</code></pre>
 <h3 id="user-rollback">9.3 用户环境改造备份</h3>
 <p>两台主机的 <code>/home/cdky/workspace/ragflow-deploy-backups/20261029-dev-user/</code> 保存原源码差异文件、原提交号、容器/卷元数据、个人环境文件备份、最终镜像记录和离线检查结果。回退应结合记录的 HEAD、差异归档和私有 env，恢复匹配的入口与镜像；不要回退业务数据。此前仅含受管 include 的个人环境文件已转换为标准 Ubuntu 配置，个人追加内容保留。</p>
 <p>参考：<a href="https://github.com/infiniflow/ragflow">官方源码</a>、<a href="references/http_api_reference.md">本地 HTTP API 参考</a>、<a href="https://deepwiki.com/infiniflow/ragflow">DeepWiki</a>、<a href="https://docs.docker.com/engine/storage/bind-mounts/">Docker bind mount</a>、<a href="https://docs.docker.com/engine/storage/volumes/">Docker volume</a>。用户提供的 v0.27.2 官方 API 页面本轮抓取返回 404，采用仓库 API 参考。精炼工作日志见 <a href="update.md">update.md</a>。</p>
+<h2 id="chat-latency">10. 聊天长时间等待：2026-11-02</h2>
+<p>91 的 t1 聊天，会话 42c817d6d11011f19f5f2327f921c6ea，14:56:52 提问“对图片迪丽热巴进行简单的描述。”。14:56:53.186 Embedding 完成；两次 ES 检索耗时 0.038/0.005 秒，14:56:53.271 进入模型流式调用。15:03:45.100 模型调用完成并记录 82 tokens，HTTP 请求总耗时 412.4 秒、状态 200；数据库 update_date 同步更新，用户确认收到回答。</p>
+<p>聊天配置使用 VLLM 实例 qwen3-text-generation，地址 http://192.168.88.169:9501/v1。模型接口实际报告底层为 Qwen2.5-7B-Instruct。当前 /models、/health 正常；最小流式请求输出 OK. 并于 0.11 秒结束，运行和等待队列均为 0。累计完成请求延迟约 66757 秒，其中排队约 56873 秒，提示服务存在历史排队压力；这些是累计指标，不能将本次 412 秒直接归因为排队。进一步定位需 169 在 14:56—15:04 的请求/调度和 GPU 日志。</p>
+<p>本次延迟集中在模型调用阶段，无证据指向 Vite 或前端编译。Nginx API 路由关闭响应缓冲，最终返回 200。日志中的 QUOTA_EXCEEDED 是 10 月 26 日会话历史，不是本次新报错。程序默认模型超时为 600 秒，因此可能长时间等待；本次在超时前成功完成。</p>
+<p>本次用户消息 files=[]，给文本模型的上下文来自知识库检索文字，未传入原图片；生成文字不能作为实际视觉识别结果。排查未修改配置、清理会话、重启服务或操作存储，仅做只读核查及短模型探针。</p>
+<h2 id="db-connection-warning">11. Database connection issue (0, '') 周期警告</h2>
+<p>2026-11-02 已通过当前代码和隔离连接复现。api/apps/__init__.py 的请求 teardown 调用 close_connection；api/db/db_models.py 对 MySQL 执行 DB.close_stale(age=30)。Peewee 的 close_stale 遍历整个池的已借出连接，按 checked_out 时间强制关闭底层连接；它不会同步重置其他线程持有的 Peewee 状态。因此同一连接可能出现 is_closed=False，而 PyMySQL open=False、_sock=None。下次 SQL 在客户端抛出 InterfaceError(0, '')，此时 SQL 尚未发给 MySQL。</p>
+<p>RetryingPooledMySQLDatabase.execute_sql 捕获异常，输出 attempt 1/5，重连并 sleep(1) 后成功。137 是 API 进程 PID，(0, '') 是异常参数，并非 MySQL 服务端错误编号。多数请求首次重试就恢复，下一条使用被关闭连接的请求又从 attempt 1/5 开始。</p>
+<p>Docker 每 30 秒请求 healthz，其 SELECT 1 也复用线程连接；请求结束又执行 age=30 清理，解释了日志的周期性。现场带警告的健康检查约 1.02 秒，无警告时约 0.003—0.02 秒，均返回 200。配置中的 stale_timeout=300 与代码强制 close_stale(age=30) 是两套不同机制，修改前者不能消除后者的行为。</p>
+<p>排查时 MySQL wait_timeout/interactive_timeout 均为 28800 秒，连接数 8/300，Connection_errors_max_connections=0，持续运行约 7 天。独立诊断进程中只使用自己的连接和 SELECT 1，等待 31 秒后调用当前清理函数，稳定复现相同警告及 1.004 秒耗时；在持有连接的工作线程调用正常 DB.close 归还后，再查询 0.001 秒且无警告。诊断连接已关闭，未操作在用连接池。</p>
+<h3 id="db-connection-fix">11.1 修复与验证（2026-11-02）</h3>
+<p><code>api/db/db_models.py</code> 的 close_connection() 对各数据库统一检查当前线程的连接状态，并调用 DB.close() 归还该线程的连接；不再扫描或强关其他线程借出的连接。Peewee 连接池仍按自身 stale_timeout 管理连接，原有真实断连重试保留。</p>
+<p><code>api/utils/health_utils.py</code> 的 check_db() 将 SELECT 1 和游标关闭放入 DB.connection_context()，确保正常执行或 SQL 异常后都在所属线程归还连接。Quart 的同步处理函数与 teardown 可能在不同执行线程，因此健康检查自行管理连接作用域，不依赖请求结束回调。其他业务方法已有的连接/事务上下文保持原职责。</p>
+<p>新增本地池回归测试覆盖：当前连接归还及重复清理、另一线程借出超过 30 秒的连接保持可用、工作线程连续健康探针、SQL 失败归还、连接建立失败报告。5 项均通过；同一测试在旧代码上 4 项失败。原 GaussDB 测试中保护 MySQL 全池强关的断言已替换为四类数据库统一归还当前连接。变更文件基础/异步 Ruff 检查及新测试完整检查通过；原文件全规则检查的 171 条既有问题无新增，未扩大本次清理范围。</p>
+<pre><code># 已安装项目测试依赖的环境，跳过与该测试无关的 NLTK conftest 初始化：
+python -m pytest --noconftest -o addopts='' -q test/unit_test/api/db/test_connection_lifecycle.py
+# 本次仅重启应用加载挂载源码，无需重建镜像；两台机器分别执行：
+bash docker/docker.sh restart app</code></pre>
+<p>91 使用隔离诊断进程复测：持有 MySQL 连接 31 秒后从其他线程调用清理，原 PyMySQL socket 仍可用，后续 SELECT 1 耗时 0.001 秒且无重试警告。两台 app 各运行两个诊断线程、共 40 次只读健康探针，全部成功，结束后池中借出连接为 0；最大 SQL 探针耗时分别为 13.6/5.0 毫秒。诊断只使用独立连接，不修改业务数据或在用连接池。</p>
+<p>91 dev 与 92 prod 的本工程 app 已重启并健康，Web/API/healthz 返回 200；重启后的多个健康检查周期未见 Database connection issue、DB execution failure 或 Failed to reconnect。HTTP 健康检查抽样约 3—36 毫秒，不再出现此前由重试带来的固定约 1 秒停顿。该结论对应本次观察窗口，真实数据库或网络断连仍会按原策略记录告警和重试。</p>
+<p>源码原件、部署前容器快照和最新验收结果保存在两机 <code>/home/cdky/workspace/ragflow-deploy-backups/20261102-db-connection-fix/</code>。91 原有 5 个 RAGFlow 容器和 92 的 6 个存储容器的 ID、启动时间、挂载及重启次数均未变化；只操作本工程 app。91 另有原本已累计重启 16650 次的 dify-db-1 继续自动重启，未对其执行操作，不纳入 RAGFlow 验收范围。若需回退，在所属主机恢复本目录中的 db_models.py.before、health_utils.py.before 到对应源码路径后仅 restart app；无需回退业务数据。本次不继续追查模型排队。</p>
+<h2 id="vscode-container">12. Windows VS Code 连接应用容器</h2>
+<p>91 的应用使用整工程挂载：宿主机 <code>/home/cdky/workspace/github/ragflow</code> 对应容器内 <code>/ragflow</code>。先在 Windows VS Code 安装 Remote - SSH 与 Dev Containers，使用 Remote - SSH 连接 91，再选择 <code>Dev Containers: Attach to Running Container...</code>，选择 <code>ragflow-app-ragflow-1</code>，打开容器内 <code>/ragflow</code>。不要选择 91 其他 RAGFlow 容器。可从终端检查容器身份：<code>id</code>、<code>pwd</code>、<code>git status --short</code>。</p>
+<h3 id="vscode-attach">12.1 附加配置、扩展和解释器</h3>
+<p>本工程现有容器由 Compose 启动，使用“附加到运行中容器”的配置，不能假设仓库里的 devcontainer.json 会自动应用。附加后执行 <code>Dev Containers: Open Named Configuration File</code>，将下列内容合并到名称级配置并保存；已有配置请保留其他设置。名称级配置保存在 VS Code 所在的客户端环境，必要时也可使用 <code>Dev Containers: Open Container Configuration File</code> 配置镜像级选项。两者分别按容器名或镜像生效，具体位置由 VS Code 管理。以下 <code>cdky</code> 应换成对应主机映射到容器的实际用户名。保存后断开并重新附加，使 remoteUser 生效，不必重建或重启业务容器。</p>
+<pre><code>{
+  "workspaceFolder": "/ragflow",
+  "remoteUser": "cdky",
+  "extensions": [
+    "ms-python.python",
+    "ms-python.vscode-pylance"
+  ],
+  "settings": {
+    "python.defaultInterpreterPath": "/ragflow/.venv/bin/python",
+    "python.analysis.typeCheckingMode": "basic",
+    "python.analysis.autoImportCompletions": true,
+    "python.analysis.indexing": true,
+    "editor.renderValidation": true,
+    "git.enabled": true,
+    "git.decorations.enabled": true,
+    "explorer.decorations.badges": true,
+    "explorer.decorations.colors": true,
+    "terminal.integrated.defaultProfile.linux": "bash",
+    "cmake.sourceDirectory": "${workspaceFolder}/internal/binding/cpp"
+  }
+}</code></pre>
+<p>样例也保存在 <a href="../docker/config/vscode-attach.example.json">vscode-attach.example.json</a>。按需在容器侧安装/启用 Python 与 Pylance，Windows 侧安装的扩展不一定运行在容器中。命令面板执行 <code>Python: Select Interpreter</code>，选择 <code>/ragflow/.venv/bin/python</code>；defaultInterpreterPath 是首次选择的默认值，不会强制覆盖 VS Code 已记住的选择。终端用 <code>/ragflow/.venv/bin/python -c 'import sys, peewee; print(sys.executable, peewee.__file__)'</code> 核实。91 本次已选 Python 3.13.11 和正确解释器。<code>.venv</code> 是只读镜像依赖卷；缺包需按工程流程更新依赖并重建镜像，不应通过 sudo 往该卷安装。</p>
+<p>样例保留 basic 类型检查，红线和导入错误不被整体隐藏；要查看诊断，打开 <code>View: Problems</code>，检查来源与规则名。实际个人工作区的 <code>.vscode/</code> 已被 Git 忽略，文件可能与本地或另一台服务器不同；请合并配置，不要直接覆盖别人的配置。CMake 路径应为 <code>${workspaceFolder}/internal/binding/cpp</code>，容器里不可使用宿主机的绝对路径。应用端口可直接使用主机映射的 8088、9380、9381，按需手动转发，避免重复暴露。</p>
+<h3 id="vscode-git">12.2 Git 修改标记</h3>
+<p>本次 VS Code 源代码管理明确报告仓库所有者不匹配：容器中的 VS Code Server/扩展进程以 root 运行，而 /ragflow 属于 uid 1000 的 cdky，root 执行 Git 返回 dubious ownership；以 cdky 执行 Git 可以正常读取。最佳长期配置是在上面的附加配置设置 <code>remoteUser</code> 为宿主机对应用户并重新附加。对于本次已建立的 root 会话，已仅将 /ragflow 加入容器 root 的 Git 安全目录列表，VS Code 随后显示修改；该 root 配置可能在容器重建后消失。若必须以 root 附加，可在确认仓库确属可信后执行 <code>git config --global --add safe.directory /ragflow</code>，勿使用 <code>*</code>。</p>
+<p>先确认编辑已保存，并分别检查 <code>id</code>、<code>git -C /ragflow status --short</code> 和 VS Code 的 Source Control 面板。若终端能看到修改而界面没有，检查 Git 内置扩展启用、工作区信任状态、Git 输出面板和文件装饰开关，再执行 <code>Git: Refresh</code> 或重新附加。以 git status 与 git diff 为准，<code>M</code> 表示工作树或暂存区相对 Git 版本发生变化，未跟踪文件通常显示 <code>U</code>；被忽略文件不会显示。容器中 conf/service_conf.yaml、其模板和 bin 是单独挂载，可能显示为修改，与宿主工作树不同；不要据此执行 git restore、暂存或提交，先核对挂载来源和实际 diff。</p>
+<h3 id="vscode-python-diagnostics">12.3 红线诊断</h3>
+<p>本次 Problems 面板显示 Pylance、basic 类型检查：<code>db_models.py:123/130</code> 报 mixin 上的 <code>super().db_value/python_value</code> 属性未知，138 行也有 mixin 的 <code>is_null</code> 属性未知。该 mixin 本身没有继承 Peewee Field，实际使用时与 CharField/TextField 多重继承，运行期可沿方法解析顺序找到方法；静态分析器单独分析 mixin 时无法确定后续基类。这些具体提示不能据此认定包未安装或程序必然运行失败。</p>
+<p><code>db_utils.py:149</code> 中 <code>query: dict = None</code> 的类型声明不包含默认值 None，静态类型检查可以合理报告不匹配；其他提示要逐条区分动态 ORM 推断限制、注解不一致和真实缺陷，不能将全部红线一概视为误报。合理的代码修复是根据调用语义完善注解、为动态接口提供准确类型信息并运行定向测试；不要为了清空界面全局关闭诊断。本次只整理配置并诊断这些示例，未批量修改业务类型或声称所有红线均已解决。</p>
+<h3 id="vscode-typecheck-off">12.4 不修改代码时减少 Pylance 类型红线</h3>
+<p>按用户要求，91 容器工作区 <code>/ragflow/.vscode/settings.json</code> 的 <code>python.analysis.typeCheckingMode</code> 从 <code>basic</code> 调整为 <code>off</code>，其余设置保持不变。此选项关闭静态类型检查规则，包括本节所述 mixin 属性推断与 None 类型不匹配；Pylance 仍可提供补全、跳转及未解析导入等基础诊断。它只调整编辑器诊断，不修复代码缺陷，也不能保证所有红线消失。本次设置生效后，VS Code 问题面板显示未检测到问题。</p>
+<p>设置为工作区级，覆盖前述容器样例中相同的默认设置。由于 .vscode 已被 Git 忽略，此次只修改 91 的个人工作区，不会自动应用到本地或 92。修改后若状态栏仍显示 Type Checking: basic，可在命令面板执行 <code>Pylance: Restart Language Server</code>；仍未生效时保存打开的文件并执行 <code>Developer: Reload Window</code>，再核对状态栏。需要恢复静态检查时，将该值改回 <code>basic</code>。修改前的设置备份位于 91 的 <code>/home/cdky/workspace/ragflow-deploy-backups/20261102-vscode-connection/settings-before-pylance-off.json</code>。</p>
+<h3 id="vscode-pytest">12.5 pytest 导入无法解析（2026-11-03）</h3>
+<p>91 的 <code>/ragflow/.venv/bin/python</code> 缺少项目开发依赖 pytest，且 .venv 为只读镜像卷；Pylance 的 off 模式依然报告无法解析的导入。已将与 uv.lock 一致的 pytest 9.0.2 及其直接依赖安装至宿主用户持久目录 <code>/home/cdky/.local/share/ragflow-vscode-test-tools</code>，并将该路径追加到 91 工作区 <code>python.analysis.extraPaths</code>。未改动应用依赖卷或业务代码。当前容器 VS Code 问题面板显示无问题。该个人目录和 .vscode 均不通过 Git 同步，其他主机需单独配置。</p>
+<p><code>extraPaths</code> 只负责 Pylance 静态解析，不会让普通 Python 进程自动找到 pytest。需要用该工具目录运行测试时，在容器终端为该命令显式指定 PYTHONPATH；例如以下命令仅验证独立的连接生命周期测试，跳过项目 conftest、项目 pytest 配置及自动加载的插件，并非完整测试套件：</p>
+<pre><code>cd /ragflow
+PYTHONPATH=/home/cdky/.local/share/ragflow-vscode-test-tools:/ragflow \
+PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 \
+/ragflow/.venv/bin/python -m pytest -c /dev/null --noconftest -o addopts= \
+  -o cache_dir=/tmp/ragflow-pytest-cache -q test/unit_test/api/db/test_connection_lifecycle.py</code></pre>
+<p>本次 5 项通过。工具目录仅含 pytest 及其直接依赖，不包含项目所有测试插件或所有开发依赖；完整测试应准备项目指定的开发环境。若问题未刷新，检查 Python 解释器、extraPaths 路径和实际目录内容，再重启 Pylance。原工作区设置备份位于 <code>/home/cdky/workspace/ragflow-deploy-backups/20261102-vscode-connection/settings-before-pytest-path.json</code>。</p>
 </article></main>
 <script>
 (() => {

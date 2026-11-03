@@ -1,0 +1,27 @@
+{
+    "_comment_file1": "*********proj .vscode/settings.json",
+    "python.defaultInterpreterPath": "/ragflow/.venv/bin/python",
+    "python.analysis.typeCheckingMode": "off",
+    "python.analysis.autoImportCompletions": true,
+    "python.analysis.indexing": true,
+
+    "editor.renderValidation": true,
+
+    "git.enabled": true,
+    "git.decorations.enabled": true,
+    "explorer.decorations.badges": true,
+    "explorer.decorations.colors": true,
+
+    "terminal.integrated.defaultProfile.linux": "bash",
+
+    "cmake.sourceDirectory": "${workspaceFolder}/internal/binding/cpp",
+
+
+    "_comment_file2": "ctrl+shift+p: Dev Containers: Open container configuration file",
+    "workspaceFolder": "/ragflow",
+    "remoteUser": "cdky",
+    "extensions": [
+        "ms-python.python",
+        "ms-python.vscode-pylance"
+    ]
+}
