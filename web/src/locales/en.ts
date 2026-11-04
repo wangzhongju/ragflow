@@ -120,6 +120,7 @@ export default {
       seeAll: 'See all',
     },
     header: {
+      dataFactory: 'Data preparation',
       knowledgeBase: 'Dataset',
       chat: 'Chat',
       register: 'Register',

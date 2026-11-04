@@ -1,0 +1,36 @@
+name: ragflow-data-factory
+services:
+  workbench:
+    image: ${RAGFLOW_IMAGE:?set RAGFLOW_IMAGE to the installed Python RAGFlow image}
+    working_dir: /factory
+    entrypoint: ["/ragflow/.venv/bin/hypercorn"]
+    command: ["--bind", "0.0.0.0:9392", "--workers", "1", "wsgi:data_factory.app:app"]
+    environment:
+      FACTORY_DB: /state/factory.sqlite3
+      FACTORY_ASSET_DIR: /state/objects
+      FACTORY_MINIO_ENDPOINT: ${FACTORY_MINIO_ENDPOINT:-}
+      FACTORY_MINIO_ACCESS_KEY: ${FACTORY_MINIO_ACCESS_KEY:-}
+      FACTORY_MINIO_SECRET_KEY: ${FACTORY_MINIO_SECRET_KEY:-}
+      FACTORY_MINIO_BUCKET: ${FACTORY_MINIO_BUCKET:-ragflow-data-factory}
+      FACTORY_MINIO_SECURE: ${FACTORY_MINIO_SECURE:-false}
+      RAGFLOW_API: ${RAGFLOW_API:?set the trusted Python API URL ending in /api/v1}
+      PYTHONDONTWRITEBYTECODE: "1"
+    volumes:
+      - .:/factory/data_factory:ro
+      - state:/state
+    ports:
+      - "127.0.0.1:9392:9392"
+    networks:
+      - ragflow
+    restart: unless-stopped
+    cpus: 1.0
+    mem_limit: 2g
+    security_opt:
+      - no-new-privileges:true
+volumes:
+  state:
+
+networks:
+  ragflow:
+    external: true
+    name: ${RAGFLOW_NETWORK:-ragflow-app_default}

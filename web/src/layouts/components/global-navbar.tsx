@@ -10,6 +10,7 @@ import { cn } from '@/lib/utils';
 import { Routes } from '@/routes';
 import { supportsCssAnchor } from '@/utils/css-support';
 import { HomeIcon } from '@/components/svg-icon';
+import { supportsDataFactory } from '@/utils/data-factory-navigation';
 
 const PathMap = {
   [Routes.Datasets]: [Routes.Datasets, Routes.DatasetBase],
@@ -43,6 +44,7 @@ const menuItems = [
     icon: MenuItemsIcon,
     icon_name: 'datasets',
   },
+  ...(supportsDataFactory() ? [{path: Routes.DataFactory, name: 'header.dataFactory', icon: MenuItemsIcon, icon_name: 'datasets'}] : []),
   {
     path: Routes.Chats,
     name: 'header.chat',

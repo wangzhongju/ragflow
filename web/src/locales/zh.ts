@@ -102,6 +102,7 @@ export default {
       review: '来自 500 多条评论',
     },
     header: {
+      dataFactory: '数据制作',
       knowledgeBase: '知识库',
       chat: '聊天',
       register: '注册',

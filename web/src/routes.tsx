@@ -31,6 +31,7 @@ export enum Routes {
   Logout = '/logout',
   Home = '/home',
   Datasets = '/datasets',
+  DataFactory = '/data-factory',
   DatasetBase = '/dataset',
   Files = '/files',
   Dataset = `${Routes.DatasetBase}/${Routes.Files}`,
@@ -197,6 +198,10 @@ const routeConfigOptions = [
         path: Routes.Datasets,
         Component: () => import('@/pages/datasets'),
       },
+        {
+          path: Routes.DataFactory,
+          Component: () => import('@/pages/data-factory'),
+        },
       {
         path: Routes.DatasetBase,
         Component: () => import('@/pages/dataset'),
