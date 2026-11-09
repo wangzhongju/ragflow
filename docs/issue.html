@@ -13,6 +13,27 @@ p,li,td,a{overflow-wrap:anywhere}h4{scroll-margin-top:115px;margin:24px 0 8px;fo
 <p><a href="update.md">更新日志：整体原因与更新描述</a> · <a href="operations.html">稳定部署与操作手册</a> · <a href="project-structure.html">工程文件职责索引</a></p>
 <p class="note">仅迁移原 operations.html 中已有且与 update.md 对应的记录；没有详细记录的条目省略，其他专题手册保持原入口。日期和条目标题与更新日志一致。“当次记录”描述历史结果；“复发时步骤”是根据现有实现整理的操作流程，本次文档整理未重新执行这些业务操作。实际命令中的 ID、主机、版本与路径需先核对当前环境。</p>
 <h2 id="date-2026-11-04">2026-11-04</h2>
+<section class="issue"><h3 id="external-file-parse">外部 Agent 独立文件解析接口</h3>
+<h4>需求与定位</h4>
+<p>外部 Agent 需要上传文档并取得解析文本。先检查 Go 的文件解析与 MCP 入口，再核对 operations.html，确认现有部署运行 Python；最终在 Python 路径实现，未修改 Go。现有 FileService.parse 已完成格式分派、解析模式与文本拼接，直接复用该入口，避免另写解析器。REST API 模块由 api/apps/__init__.py 自动发现并注册到 /api/v1。</p>
+<h4>修改位置与契约</h4>
+<ul><li>api/apps/restful_apis/file_parse_api.py：GET/POST /files/parse，只接受已有 AUTH_API 鉴权，上传一个 file，校验大小及模式，使用长任务线程池执行。</li><li>api/apps/services/file_parse_service.py：允许的格式与模式、文件名规范化、20 MiB 限制、调用现有 FileService.parse 并返回文本。</li><li>sdk/skills/ragflow-parse-file/SKILL.md：供外部 Agent 分发安装的调用流程。它不是 MCP 服务；MCP-only 客户端需要在自己的工具服务中封装 HTTP。</li><li>test/unit_test/api/apps/restful_apis/test_file_parse_api.py：真实 Quart 请求测试，隔离数据库鉴权与原生解析依赖。</li></ul>
+<h4>本地检查及实际结果</h4>
+<p>Windows Python 3.14 下 11 项测试通过，Ruff 检查通过。覆盖成功响应和租户传递、Windows 文件名、认证装饰器配置、空文件、不支持的扩展名、未知字段、重复模式、20 MiB 超限、解析异常脱敏、能力查询、错误媒体类型及多个文件。真实鉴权查询与 PDF/OCR 未在本轮测试执行，不能把 stub 测试当作部署验收。Skill 用 UTF-8 模式运行校验器通过；默认 Windows GBK 模式不能读取中文 UTF-8 Skill，应使用 python -X utf8。</p>
+<pre><code>python -m pytest test/unit_test/api/apps/restful_apis/test_file_parse_api.py -q
+python -m ruff check api/apps/restful_apis/file_parse_api.py api/apps/services/file_parse_service.py test/unit_test/api/apps/restful_apis/test_file_parse_api.py
+python -m ruff format --check api/apps/restful_apis/file_parse_api.py api/apps/services/file_parse_service.py test/unit_test/api/apps/restful_apis/test_file_parse_api.py</code></pre>
+<h4>开发发布与再次排障步骤</h4>
+<ol><li>确认目标为 192.168.88.91，进入 /home/cdky/workspace/github/ragflow，核对当前版本与待发布差异。92 是生产，不同步、不执行重启。两端共享存储，避免创建测试知识库或修改模型配置。</li>
+<li>将两个新 Python 文件随审核后的版本同步到相同路径，保存当前版本用于回退；执行 <code>bash docker/docker.sh restart app</code>，观察应用启动日志是否有导入错误。此文档给出发布步骤，本轮未执行服务器同步或重启。</li>
+<li>参照 <a href="file-parsing.md">接口文档</a>，设置服务地址与已有用户 API Key，先 GET 查询能力，再上传内容为 hello agent 的 TXT。预期 HTTP 200、code=0、content 包含该文本。不要把密码当 API Key。</li>
+<li>404：检查两个新文件是否已发布、自动注册是否成功、是否重启以及代理是否转发到 Python 9380；401/403 或认证业务错误：检查 Bearer 格式、API Key 和所属用户有效状态。不要在日志中打印完整密钥。</li>
+<li>400：只传一个 file 和一个可选 layout_recognize，删除其他字段，检查扩展名及空文件；413：将文档拆分到 20 MiB 以下，并检查代理限制；415：改用 multipart 上传。</li>
+<li>422：在应用日志搜索 <code>External file parsing failed</code> 并读取该请求异常栈；先用 TXT 复测区分接口与解析器故障，再检查 PDF/Office 是否损坏、原生依赖是否齐全、OCR 模型是否存在。扫描 PDF 使用 DeepDOC，带文本层 PDF 先用 Plain Text。修复依赖需遵循已有镜像构建流程，不能向只读依赖卷临时安装。</li>
+<li>超时：检查文件规模和服务资源；底层解析可能仍在运行，不自动重复提交。接口无任务 ID、结果缓存或强制取消能力。验收补测 PDF 文本层、扫描 PDF、DOCX、XLSX 和中文表格，确认结果可用再交给外部 Agent。</li>
+<li>回退：将本次版本回退到已保存版本并仅重启 91 应用。该接口不新增数据库表、文件记录、对象存储写入或索引，无业务数据迁移需要撤销。</li></ol>
+<p>本轮只修改本地源码和文档，没有访问或修改 91/92 服务。工作区原有 CLAUDE.md 与 testdata 链接异常保持不变；检查差异时显式限定本次文件。</p></section>
+
 <section class="issue"><h3 id="data-factory-pipeline-ui">修复数据制作管道画布加载错误</h3>
 <p>适用现象：智能体 → 数据管道打开后出现 <code>Something went wrong</code>，错误为 <code>TypeError: ((intermediate value) ?? []).map is not a function</code>，刷新仍失败。本次对象实际名称为 <code>data_factory_multimodal_budget_20261104</code>，ID 为 <code>6f42931ed7f911f18ddbffc15ef7f57b</code>，排查与修复时间为北京时间 13:59–14:02。</p>
 <h4>1. 修改清单与影响范围</h4>
