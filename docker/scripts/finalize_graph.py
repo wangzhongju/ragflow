@@ -1,7 +1,7 @@
 """Finalize one completed StructureGraph task; read-only unless --apply is passed.
 
-Run in the patched application image. Back up MySQL before applying; see
- docs/troubleshooting.md. This script never rebuilds a graph or deletes a stream.
+Run inside the application container. Back up MySQL before applying.
+See files/operations.html#graph-finalize for queue scope and verification.
 """
 
 import argparse

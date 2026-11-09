@@ -1,4 +1,4 @@
-"""Read-only task inspection inside the application container; see docs/troubleshooting.md."""
+"""Read-only task inspection inside the application container; see files/operations.html#task-inspect."""
 
 import argparse
 import json
