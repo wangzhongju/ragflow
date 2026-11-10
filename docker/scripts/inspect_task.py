@@ -1,5 +1,3 @@
-"""Read-only task inspection inside the application container; see docs/troubleshooting.md."""
-
 import argparse
 import json
 import os

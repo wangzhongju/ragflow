@@ -1,6 +1,6 @@
 # Docker 部署
 
-统一入口为 `bash docker/docker.sh`，角色必须明确选择 `app`、`storage` 或 `all`。分离与同机部署共用 Compose，区别是存储 IP。目录和文件职责只在 [完整工程文件职责索引](../docs/project-structure.html#docker) 维护。
+统一入口为 `bash docker/docker.sh`，角色必须明确选择 `app`、`storage` 或 `all`。分离与同机部署共用 Compose，区别是存储 IP。
 
 ## 构建与切换模式
 
@@ -67,4 +67,4 @@ bash docker/docker.sh down app            # 保留数据卷
 
 直接查看镜像文件可执行 `docker run -it --rm --entrypoint /bin/bash IMAGE`，覆盖默认应用入口。正常开发使用 `into app`，获得工程挂载、个人账户和应用环境。
 
-项目名固定为 `ragflow-app` / `ragflow-storage`，拒绝全局清理或 `down -v`。91 旧项目不属于本工程，禁止操作。完整操作、备份和验收见 [operations.html](../docs/operations.html)，日志见 [update.md](../docs/update.md)。
+项目名固定为 `ragflow-app` / `ragflow-storage`，拒绝全局清理或 `down -v`。91 旧项目不属于本工程，禁止操作。完整操作、备份和验收见 [operations.html](../files/operations.html)，日志见 [update.md](../files/update.md)。
