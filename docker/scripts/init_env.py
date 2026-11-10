@@ -32,6 +32,7 @@ def main():
             values[key] = secrets.token_hex(24)
     values.update(APP_IP=args.app_ip, STORAGE_IP=args.storage_ip, APP_MEM_LIMIT=args.app_memory)
     values.update(APP_MODE=args.app_mode, RAGFLOW_IMAGE=f"ragflow-local:{args.app_mode}")
+    values["RAGFLOW_QUEUE_NAME"] = "te.dev." + args.app_ip.replace(".", "_").replace(":", "_") if args.app_mode == "dev" else "te"
     for key in ("MYSQL_HOST", "MINIO_HOST", "ES_HOST", "REDIS_HOST"):
         values[key] = args.storage_ip
     app_keys = {
@@ -39,6 +40,7 @@ def main():
         "MYSQL_MAX_PACKET", "MYSQL_PASSWORD", "MINIO_HOST", "MINIO_USER", "MINIO_PASSWORD", "ES_HOST",
         "ELASTIC_PASSWORD", "REDIS_HOST", "REDIS_PASSWORD", "DOC_ENGINE", "DB_TYPE", "STORAGE_IMPL",
         "API_PROXY_SCHEME", "TZ", "REGISTER_ENABLED", "ENABLE_REGISTER", "ADMIN_DEFAULT_PASSWORD", "RAGFLOW_SECRET_KEY", "USE_DOCLING",
+        "RAGFLOW_QUEUE_NAME",
     }
     storage_keys = {
         "STORAGE_IP", "MYSQL_IMAGE", "ES_IMAGE", "KIBANA_IMAGE", "MINIO_IMAGE", "REDIS_IMAGE", "REDISINSIGHT_IMAGE",

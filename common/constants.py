@@ -15,6 +15,7 @@
 #
 
 import os
+import re
 from enum import Enum, IntEnum
 from enum import StrEnum
 
@@ -314,7 +315,11 @@ class ForgettingPolicy(StrEnum):
 # ENV_TRACE_MALLOC_ENABLED = "TRACE_MALLOC_ENABLED"
 
 PAGERANK_FLD = "pagerank_fea"
-SVR_QUEUE_NAME = "te"
+SVR_QUEUE_NAME = os.getenv("RAGFLOW_QUEUE_NAME", "te.dev" if os.getenv("APP_MODE") == "dev" else "te")
+if not re.fullmatch(r"[a-zA-Z0-9][a-zA-Z0-9_.-]{0,63}", SVR_QUEUE_NAME):
+    raise ValueError("RAGFLOW_QUEUE_NAME must be a nonempty queue namespace (letters, digits, '.', '_' or '-').")
+if os.getenv("APP_MODE") == "dev" and SVR_QUEUE_NAME == "te":
+    raise ValueError("Development workers must not consume the production queue namespace 'te'.")
 SVR_CONSUMER_GROUP_NAME = "rag_flow_svr_task_broker"
 TAG_FLD = "tag_feas"
 
