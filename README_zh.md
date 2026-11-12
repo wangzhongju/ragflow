@@ -1,4 +1,4 @@
-> 本工程部署与二次开发请先阅读 [Docker 目录说明](docker/README.md) 和 [操作手册](files/operations.html)。应用通过宿主机工程挂载运行。
+> 本工程部署与二次开发请先阅读 [Docker 目录说明](docker/README.md) 和 [操作手册](files/operations.md)。应用通过宿主机工程挂载运行。
 
 <div align="center">
 <a href="https://cloud.ragflow.io/">
@@ -66,7 +66,7 @@
 
 </details>
 
-> 本工程维护入口：[操作手册](files/operations.html) · [Docker 部署](docker/README.md)
+> 本工程维护入口：[操作手册](files/operations.md) · [Docker 部署](docker/README.md)
 
 ## 💡 RAGFlow 是什么？
 
@@ -141,15 +141,15 @@
 
 ## 🎬 自主托管
 
-本工程的分离部署、单机部署、工程挂载和配置统一见 [Docker 目录说明](docker/README.md) 与 [操作手册](files/operations.html)。
+本工程的分离部署、单机部署、工程挂载和配置统一见 [Docker 目录说明](docker/README.md) 与 [操作手册](files/operations.md)。
 
 ## 🔧 系统配置
 
-本工程的分离部署、单机部署、工程挂载和配置统一见 [Docker 目录说明](docker/README.md) 与 [操作手册](files/operations.html)。
+本工程的分离部署、单机部署、工程挂载和配置统一见 [Docker 目录说明](docker/README.md) 与 [操作手册](files/operations.md)。
 
 ## 🔧 源码编译 Docker 镜像
 
-See [Docker build commands](docker/README.md) and the [operations manual](files/operations.html). Runtime deployments bind-mount the checkout.
+See [Docker build commands](docker/README.md) and the [operations manual](files/operations.md). Runtime deployments bind-mount the checkout.
 
 ```bash
 bash docker/docker.sh fetch

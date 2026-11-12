@@ -1,4 +1,4 @@
-> 本工程部署与二次开发请先阅读 [Docker 目录说明](docker/README.md) 和 [操作手册](files/operations.html)。应用通过宿主机工程挂载运行。
+> 本工程部署与二次开发请先阅读 [Docker 目录说明](docker/README.md) 和 [操作手册](files/operations.md)。应用通过宿主机工程挂载运行。
 
 <div align="center">
 <a href="https://cloud.ragflow.io/">
@@ -66,7 +66,7 @@
 
 </details>
 
-> Local project guides: [Operations](files/operations.html) · [Docker deployment](docker/README.md)
+> Local project guides: [Operations](files/operations.md) · [Docker deployment](docker/README.md)
 
 ## 💡 What is RAGFlow?
 
@@ -142,15 +142,15 @@ releases! 🌟
 
 ## 🎬 Self-Hosting
 
-For this checkout, follow [Docker deployment](docker/README.md) and the [operations manual](files/operations.html) for split or single-host deployment, source mounts, and configuration.
+For this checkout, follow [Docker deployment](docker/README.md) and the [operations manual](files/operations.md) for split or single-host deployment, source mounts, and configuration.
 
 ## 🔧 Configurations
 
-For this checkout, follow [Docker deployment](docker/README.md) and the [operations manual](files/operations.html) for split or single-host deployment, source mounts, and configuration.
+For this checkout, follow [Docker deployment](docker/README.md) and the [operations manual](files/operations.md) for split or single-host deployment, source mounts, and configuration.
 
 ## 🔧 Build a Docker Image
 
-See [Docker build commands](docker/README.md) and the [operations manual](files/operations.html). Runtime deployments bind-mount the checkout.
+See [Docker build commands](docker/README.md) and the [operations manual](files/operations.md). Runtime deployments bind-mount the checkout.
 
 ```bash
 bash docker/docker.sh fetch

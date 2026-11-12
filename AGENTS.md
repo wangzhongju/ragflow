@@ -121,8 +121,8 @@ bash build.sh --all
 ```
 
 ## Fork Documentation
-- Put fork-specific technical procedures in [files/operations.html](files/operations.html).
-- Record incidents and repeatable diagnosis, repair, verification, and rollback steps in [files/issue.html](files/issue.html).
+- Put fork-specific technical procedures in [files/operations.md](files/operations.md).
+- Record incidents and repeatable diagnosis, repair, verification, and rollback steps in [files/issue.md](files/issue.md).
 - Keep [files/update.md](files/update.md) to the overall reason and summary of each change.
 - Use the local workspace and 91 for development. 92 hosts production and shared storage. Run development tests that write data against isolated storage.
 
