@@ -1,7 +1,7 @@
 # 部署与操作手册
 
 - 用途：归纳可复用的部署、接口、存储及排障操作。
-- 核对基准：2026-11-12 本地工程代码；本次未连接 91/92、未执行部署或业务写入。
+- 核对基准：主体部署手册为 2026-11-12 本地核查；DataFactory 章节于 2026-11-16 补充本地隔离验证与部署准备，均未连接 91/92 或执行部署。
 - 适用范围：本工程的 Linux / Docker Compose v2 Python 应用部署。Go 服务的实现与构建入口需另按当前代码核对，不把下文的 Python 接口契约套用于 Go。
 - 关联文档：[问题与修复记录](issue.md)、[更新摘要](update.md)。
 
@@ -1701,3 +1701,104 @@ curl -fsS http://192.168.88.91:9380/api/v1/system/healthz
 - 任一删除步骤失败，保持新应用停止，保存错误及已完成步骤，先核查再继续。若要回滚，使用[停写后取得的](#cleanup-backup)同一时间点备份成套恢复 MySQL、ES、MinIO、Redis；ES 优先使用已验证成功的 snapshot。
 - 不要只回滚 MySQL 后继续服务，否则索引和对象可能仍然缺失。参见[备份与恢复](#backup)，目标仅限 `ragflow-storage` 的卷和服务。
 
+
+
+<a id="datafactory-validation"></a>
+
+## DataFactory 本地验证与 91 部署准备（2026-11-16）
+
+当前为基础纠偏阶段，M0–M2 尚未验收。以下配置/步骤已在本地完成静态和单元验证，尚未在 91 启动；92 不在开发操作范围。
+
+### 本地检查
+
+在 datafactory/backend：
+
+```bash
+uv sync --python 3.13
+uv run pytest tests/unit
+uv run ruff check src tests alembic
+uv run ruff format --check src tests alembic
+uv run pyright
+uv run lint-imports
+uv run python -m datafactory.app.openapi ../web/openapi.json
+```
+
+单元测试只用内存/临时 SQLite、内存对象存储、Gateway 桩。迁移测试会在临时目录完整执行升级、降级、再次升级并检查 ORM 列，不使用环境中原有数据库 URL。生成 OpenAPI 不连接任何服务，也不要求配置生产密钥。
+
+根目录的 Gateway 桩契约：
+
+```bash
+uv run pytest --noconftest test/unit_test/api/test_gateway_contract.py
+```
+
+在 datafactory/web：
+
+```bash
+npm ci
+npm run gen:api
+npm run type-check
+npm run build
+```
+
+不要把 Linux backend/.venv 当作 Windows 环境使用。本次 Windows 验证创建了独立缓存环境，未改动原 .venv；正式复验优先使用上面的 Python 3.13 uv 命令。
+
+### 开发部署配置
+
+`datafactory/docker/compose.yml` 的项目名为 ragflow-datafactory，包含独立 df-mysql、df-redis、df-minio、df-api、df-worker。存储卷归此 Compose 项目所有，数据库/桶/Redis 前缀包含 dev；存储服务不发布宿主端口。API/Worker 另接入 91 的 ragflow-app_default 网络访问开发 Gateway。
+
+1. 仅在 91，将 datafactory/docker/.env.example 复制为同目录 .env；填写独立开发数据库、MinIO、Gateway 和会话密钥。数据库口令须 URL 安全，可使用随机 hex。会话密钥至少 32 字符，不能恢复源码中的固定密钥。服务密钥与 91 Gateway 配置一致。
+2. `DF_SOURCE_ROOT` 指向 91 的 `/home/cdky/workspace/github/ragflow`。不把任何存储端点指向 92。Compose 默认使用新建的独立 MySQL，不会自动迁移此前开发 SQLite 的数据。
+3. 校验时只运行 `docker compose --env-file datafactory/docker/.env -f datafactory/docker/compose.yml config --quiet`，不要将含凭据的完整 config 输出粘贴进问题记录。
+4. API 启动命令先执行 `alembic upgrade head`，成功后才运行 Uvicorn；Worker 等 API 健康后启动。模型预算/完整 Worker 租约尚未实现，在完成引擎阶段之前不启动真实付费制作任务。
+5. 后续部署验收应先构建镜像、检查 MySQL 迁移和 MinIO 资产跨进程读取，再使用开发 Gateway 桩跑流程；真实知识库小预算流程须等预算与调用记账落地。当前本地的 Compose config 校验不能替代这些验收。
+
+API 不再隐式建表或回退到内存资产存储。缺会话密钥/MinIO 凭据启动失败时，修正 .env；库缺列时，核对 alembic current 与 0004_runtime_integrity，不手工补列绕过迁移。迁移回退与备份要求见 [问题记录](issue.md#datafactory-foundation-20261116)。
+
+
+<a id="datafactory-run-recovery"></a>
+## DataFactory 运行、预览与恢复操作（2026-11-16）
+
+仅适用于本地或 91 的隔离开发资源。操作前确认 `DF_DATABASE_URL` 数据库名、`DF_MINIO_BUCKET`、`DF_REDIS_PREFIX` 含 dev；不要指向 92。运行应用要求显式会话密钥、MinIO 凭据及 Gateway 服务密钥。
+
+### 更新与本地验证
+
+在 `datafactory/backend` 使用 Python 3.13 环境：
+
+```bash
+uv sync --python 3.13
+uv run alembic upgrade head
+uv run pytest tests/unit
+uv run ruff check src tests alembic
+uv run ruff format --check src tests alembic
+uv run pyright
+uv run lint-imports
+uv run python -m datafactory.app.openapi ../web/openapi.json
+```
+
+运行 API/Worker 之前执行迁移；启动不会自行建表。新增 0005 会使没有冻结版本的旧 queued/running 明确失败。开发验收应创建新的小规模预览。
+
+在 `datafactory/web` 使用 Node 24（本次实际 24.14）：
+
+```bash
+npm ci
+npm run gen:api
+npm run type-check
+npm run lint
+npm run test
+npm run build
+npm run build-storybook
+npm audit
+```
+
+浏览器桩验证：默认需要先执行 `npx playwright install chromium`，再 `npm run e2e`；Windows 已装 Edge 时在 PowerShell 设置 `$env:PLAYWRIGHT_CHANNEL = 'msedge'` 后执行 `npm run e2e`。测试启动并关闭自己的本地 Vite 服务，用拦截请求提供测试数据，不连接 RAGFlow。截图位于 `test-results/`，此目录不入库。
+
+Storybook：`npm run storybook`，状态徽标的 completed/queued/paused/failed/billed_unknown 用例可切换 light/dark；构建输出在忽略的 `storybook-static/`。依赖覆盖只限定 Storybook 的 docgen 插件使用 glob 14.0.6；以后更新该工具时同时运行 `npm audit` 与 Storybook 构建，不能直接删除覆盖后跳过验证。
+
+### 使用流程与恢复语义
+
+1. 在运行页显式选择配方、ready 快照和种子数，先预览（1–50），检查结果再正式运行。两者均返回后台 Run，运行绑定不可变版本；编辑草稿不会修改已排队的运行。
+2. 暂停/继续/取消调用同一运行资源的 `:pause`、`:resume`、`:cancel`。暂停后保留检查点；继续按版本及种子恢复，已提交列批次直接加载。取消不可恢复，已发送模型请求仍可结算。
+3. 详情展示检查点完成数、列耗时、调用数、已结算/预留 Token；调用记录按游标翻页。运行时 SSE 更新，断流时 5 秒刷新。暂停后的迟到结算可点击刷新查看。
+4. Worker 中断后重启即可扫描过期的 5 分钟租约；sent 请求未得到确定结果时转为 billed_unknown 并暂停，不能自动重复调用。API 返回 409 billed_unknown 时按 [排查记录](issue.md#datafactory-runs-20261116) 核账，不直接改数据库。
+5. 预算超限按配方 `budget.on_exceed` 暂停或失败。当前没有运行预算调整、三级预算或人工账目结算接口；不要把“继续”当成增加预算，也不要把新建运行当成无需再次计费的恢复。
+6. 当前 Worker 使用数据库队列，尚无 Streams/AIMD；完整语料和全局处理仍在内存，不以小批次检查点等同于 50 万种子的容量验收。

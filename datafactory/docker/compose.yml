@@ -1,0 +1,84 @@
+name: ragflow-datafactory
+
+x-runtime: &runtime
+  image: datafactory:dev
+  build:
+    context: ..
+    dockerfile: docker/Dockerfile
+  working_dir: /ragflow/datafactory/backend
+  volumes:
+    - ${DF_SOURCE_ROOT:-/home/cdky/workspace/github/ragflow}:/ragflow
+  environment: &environment
+    DF_ENV: dev
+    DF_HOST: "192_168_88_91"
+    DF_DATABASE_URL: mysql+asyncmy://datafactory:${DF_DB_PASSWORD:?Set DF_DB_PASSWORD}@df-mysql:3306/datafactory_dev_91
+    DF_REDIS_URL: redis://df-redis:6379/0
+    DF_REDIS_PREFIX: "df:dev:192_168_88_91:"
+    DF_MINIO_ENDPOINT: df-minio:9000
+    DF_MINIO_ACCESS_KEY: ${DF_MINIO_ACCESS_KEY:?Set DF_MINIO_ACCESS_KEY}
+    DF_MINIO_SECRET_KEY: ${DF_MINIO_SECRET_KEY:?Set DF_MINIO_SECRET_KEY}
+    DF_MINIO_BUCKET: datafactory-dev-192-168-88-91
+    DF_GATEWAY_BASE_URL: http://ragflow-app-ragflow-1:9380/api/v1
+    DF_GATEWAY_SERVICE_KEY: ${DF_GATEWAY_SERVICE_KEY:?Set DF_GATEWAY_SERVICE_KEY}
+    DF_SESSION_SECRET: ${DF_SESSION_SECRET:?Set a random secret of at least 32 characters}
+    PYTHONPATH: /ragflow/datafactory/backend/src
+  networks: [default, ragflow-app_default]
+  restart: unless-stopped
+
+services:
+  df-mysql:
+    image: mysql:8.4
+    environment:
+      MYSQL_DATABASE: datafactory_dev_91
+      MYSQL_USER: datafactory
+      MYSQL_PASSWORD: ${DF_DB_PASSWORD:?Set DF_DB_PASSWORD}
+      MYSQL_ROOT_PASSWORD: ${DF_DB_ROOT_PASSWORD:?Set DF_DB_ROOT_PASSWORD}
+    volumes: [mysql-dev:/var/lib/mysql]
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -h localhost --silent"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+    restart: unless-stopped
+  df-redis:
+    image: redis:7-alpine
+    command: [redis-server, --appendonly, "yes"]
+    volumes: [redis-dev:/data]
+    restart: unless-stopped
+  df-minio:
+    image: minio/minio:RELEASE.2025-04-22T22-12-26Z
+    command: [server, /data]
+    environment:
+      MINIO_ROOT_USER: ${DF_MINIO_ACCESS_KEY:?Set DF_MINIO_ACCESS_KEY}
+      MINIO_ROOT_PASSWORD: ${DF_MINIO_SECRET_KEY:?Set DF_MINIO_SECRET_KEY}
+    volumes: [minio-dev:/data]
+    restart: unless-stopped
+  df-api:
+    <<: *runtime
+    command: [sh, -c, "alembic upgrade head && exec python -m uvicorn datafactory.app.main:create_app --factory --host 0.0.0.0 --port 9390"]
+    ports: ["127.0.0.1:9390:9390"]
+    depends_on:
+      df-mysql: {condition: service_healthy}
+      df-minio: {condition: service_started}
+      df-redis: {condition: service_started}
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:9390/healthz')"]
+      interval: 10s
+      timeout: 3s
+      retries: 20
+  df-worker:
+    <<: *runtime
+    command: [python, -m, datafactory.worker]
+    depends_on:
+      df-api: {condition: service_healthy}
+
+networks:
+  default:
+    internal: true
+  ragflow-app_default:
+    external: true
+
+volumes:
+  mysql-dev:
+  redis-dev:
+  minio-dev:

@@ -1,0 +1,117 @@
+[project]
+name = "datafactory"
+version = "0.1.0"
+description = "Training-data production platform beside RAGFlow."
+requires-python = ">=3.13"
+dependencies = [
+    "fastapi>=0.115",
+    "uvicorn[standard]>=0.32",
+    "pydantic>=2.9",
+    "pydantic-settings>=2.6",
+    "sqlalchemy[asyncio]>=2.0.36",
+    "asyncmy>=0.2.10",
+    "alembic>=1.14",
+    "redis>=5.2",
+    "minio>=7.2",
+    "pyarrow>=18",
+    "httpx>=0.27",
+    "jinja2>=3.1",
+    "datasketch>=1.6",
+    "jsonschema>=4.23",
+    "numpy>=2.1",
+    "structlog>=24.4",
+    "python-ulid>=3.0",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=8.3",
+    "pytest-asyncio>=0.24",
+    "ruff>=0.8",
+    "pyright>=1.1.390",
+    "import-linter>=2.1",
+    "aiosqlite>=0.20",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/datafactory"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+markers = [
+    "integration: needs the dev-isolated MySQL, Redis and MinIO",
+    "e2e: runs against the dev RAGFlow and spends model budget",
+]
+
+[tool.ruff]
+line-length = 120
+target-version = "py313"
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]
+
+[tool.pyright]
+pythonVersion = "3.13"
+venvPath = "."
+venv = ".venv"
+typeCheckingMode = "standard"
+
+[tool.importlinter]
+root_package = "datafactory"
+
+[[tool.importlinter.contracts]]
+name = "Domain and gateway stay below the services"
+type = "layers"
+layers = [
+    "datafactory.app",
+    "datafactory.pipeline",
+    "datafactory.corpus | datafactory.engine | datafactory.adapters",
+    "datafactory.store | datafactory.gateway",
+    "datafactory.domain",
+    "datafactory.core",
+]
+
+[[tool.importlinter.contracts]]
+name = "The domain model depends only on core"
+type = "forbidden"
+source_modules = ["datafactory.domain"]
+forbidden_modules = [
+    "datafactory.app",
+    "datafactory.store",
+    "datafactory.gateway",
+    "datafactory.engine",
+    "datafactory.corpus",
+    "datafactory.worker",
+]
+
+[[tool.importlinter.contracts]]
+name = "The gateway client depends only on core"
+type = "forbidden"
+source_modules = ["datafactory.gateway"]
+forbidden_modules = [
+    "datafactory.app",
+    "datafactory.domain",
+    "datafactory.store",
+    "datafactory.engine",
+    "datafactory.corpus",
+    "datafactory.worker",
+]
+
+[[tool.importlinter.contracts]]
+name = "Adapters read releases, not the store"
+type = "forbidden"
+source_modules = ["datafactory.adapters"]
+forbidden_modules = ["datafactory.store", "datafactory.gateway"]
+
+[[tool.importlinter.contracts]]
+name = "Nothing imports the worker"
+type = "forbidden"
+source_modules = ["datafactory"]
+forbidden_modules = ["datafactory.worker"]
+allow_indirect_imports = false

@@ -5,11 +5,13 @@
 - **用途：**按日期保存故障现象、证据、修复、验证与回退；稳定操作见 [操作手册](operations.md)。
 - **记录口径：**日期章节中的“本次/本轮”、主机状态、测试通过数量、模型响应和私有备份均指该日原记录。本次只对照本地代码，不重新证明历史现场结果。
 - **环境边界：**本地与 91 为开发范围；92 为生产及共享存储。历史生产操作仅供审计，不是本次执行授权。即使请求发往 91，也必须先确认数据库、Redis、索引和对象存储已隔离，再进行写入测试。
-- **本次核对：**2026-11-12，仅修改文档；未连接 91/92、未调用模型、未执行部署或业务测试。历史 ID、端口、模型和镜像标签使用前须重新核实。
+- **最新记录：**2026-11-16，DataFactory 本地代码核查、修复及隔离测试；未连接 91/92、未调用真实模型或部署。2026-11-12 的文档核对结论及更早的 ID、端口、模型、镜像标签使用前须重新核实。
 - **与更新日志的对应：**[update.md](update.md) 只存整体摘要；其中缺少 11 月 3—4 日的六个专题摘要，本次不扩大修改范围补写。对于仅存摘要的旧条目，在相应日期标记证据缺口，不补造排查或验收结果。
 
 ## 目录
 
+- [2026-11-16 DataFactory 可恢复运行](#datafactory-runs-20261116)
+- [2026-11-16 DataFactory 基础纠偏](#datafactory-foundation-20261116)
 - [2026-11-04](#date-2026-11-04)
 - [2026-11-03](#date-2026-11-03)
 - [2026-11-02](#date-2026-11-02)
@@ -19,6 +21,82 @@
 - [2026-10-26](#date-2026-10-26)
 - [2026-10-24](#date-2026-10-24)
 - [2026-10-23](#date-2026-10-23)
+
+<a id="datafactory-runs-20261116"></a>
+## 2026-11-16：DataFactory 可恢复运行与模型调用台账
+
+### 现象与完整执行路径核对
+
+- `start_run → worker → execute_run` 原先只保存 recipe_id；worker 在执行时读取草稿，排队后修改配方会改变运行内容。
+- `execute_run → SnapshotRepository.segments` 把种子 limit 当成语料装载上限，导致冻结快照中的候选/教师目标不可见。默认 10,000 条也不是完整语料。
+- 原执行器一次处理全部种子，没有批次提交记录。取消仅能阻止最终数据集落库，不能拒绝旧进程的中间结果；进程退出留下 running。
+- 列直接调用 Gateway；稠密检索发送文本还会在 Gateway 内调用 Embedding，平台无账目。超时后无法区分未发送与已计费结果未知。
+- 预览同步执行且不留运行记录。前端选择首个配方和首个快照、4 秒轮询，没有输入选择、预算或续跑入口。
+
+### 修复路径
+
+1. 新增 `0005_resumable_runs`，版本唯一键、运行版本/模式/种子/批大小/代次/租约/预算、检查点和调用台账统一落库。版本冻结与新运行同事务，幂等回放不会产生新运行。
+2. `pipeline/run.py` 按 DAG 分列分批，完整冻结语料与种子数量分离；全局去重跨批执行。`store/runs.py` 写不可变 Parquet 后提交检查点，读取验证内容哈希；所有提交以 running + attempt_generation 条件更新取得写入权。
+3. pause/cancel/resume/重新领取使代次递增；过期租约可重新领取。恢复时已提交批次直接读取，成功 Invocation 直接返回原响应；最终写 Dataset 与完成状态处于同一持锁事务。
+4. `engine/model_client.py` 先写 sent 台账并预留预算，再发模型请求。明确连接前失败/拒绝退回 Token 预留；实际用量结算；没有用量、结果未知分别保留预留。账目结算统一先锁 Run 再锁 Invocation，避免与领取路径反序加锁。
+5. 读超时/响应异常不自动重发，标 billed_unknown 并暂停；进程在发送后退出时也按未知结果恢复。取消/暂停后的迟到成功响应可以结算，旧任务仍不能写检查点或样本。
+6. 预览 1–50 行使用同一后台执行器，不创建 Dataset。新增指标、暂停/继续、SSE 路由；SSE 每轮重新检查会话和项目角色，离开页面不影响后台任务。
+7. 前端运行页拆到 `features/runs`，使用 Query/SSE、生成契约、中英文及亮暗主题，支持显式输入、进度、列耗时、调用台账分页和取消确认。状态徽标只有一个实现。
+8. 测试工具选型中实际遇到 Vite 5 与新版 Vitest/MSW 的 peer 冲突，且旧测试依赖存在已报告漏洞；最终升级到 Vite 7 / Vitest 5 / Router 7。Storybook 10 的文档生成插件依赖 glob 13，引入受影响的 minimatch；对该插件定向使用 glob 14.0.6，再验证 Storybook 构建和 npm audit。没有使用 `--force`、忽略 peer 依赖或全局覆盖其他依赖。
+
+### 再次发生时的诊断与处理
+
+1. 在浏览器运行页记录运行 ID、冻结版本、状态、代次和错误，点击刷新同步暂停后可能迟到的调用结算。查看 `GET /api/factory/v1/projects/{pid}/runs/{rid}/metrics` 的调用状态、预留/已结算 Token、列与批次统计。
+2. 校验服务确实连到隔离开发数据库/桶/Redis 前缀；只在该环境执行 `uv run alembic current`，应为 `0005_resumable_runs`。未升级时先停止 API/Worker、备份该开发数据库及桶，再执行 `uv run alembic upgrade head` 后重启。旧无版本 running/queued 会明确失败，重新创建运行，不从当前草稿恢复旧任务。
+3. running 无进展时先确认 Worker 进程和日志。租约为 5 分钟，正常检查点和模型预留会续租；进程中断后重启 Worker，等过期租约被领取。不要手工把 running 改为 queued，否则无法保证代次和台账一致。
+4. 手动暂停：`POST …/runs/{rid}:pause`；恢复：`POST …/runs/{rid}:resume`。恢复后检查 completed_units 递增，已完成批次不会重新写入；在本地运行 `tests/unit/test_resumable_runs.py` 可复现此路径。
+5. 如错误为预算不足，当前仅有运行级预算、尚无预算调整 API。保留暂停记录；需要继续开发流程时，修改配方预算并创建新运行。新运行可能再次调用模型，不能当作免计费续跑。
+6. `sent` 或 `billed_unknown` 阻止恢复是保护行为。核对 Gateway/提供方日志确认请求结果，保留调用 ID、摘要与预留，等待人工核账功能；不要删 Invocation、清零预算或强改状态重试。取消运行可终止继续执行，但不会删除账目或撤销已发送请求。
+7. Parquet 缺失/哈希不符时，运行会失败。核对指标对应的 `run_checkpoint.object_key`、独立 MinIO 桶与权限，恢复同一对象备份；不要生成不同内容覆盖相同键。旧代次上传但未提交的对象不会被执行器读取。
+8. 前端实时连接断开时自动每 5 秒刷新；检查 SSE 响应类型 `text/event-stream`、`X-Accel-Buffering: no`、会话期限及项目成员权限。配方/快照为空或请求失败时页面明确显示状态，不自动换用其他输入。
+
+### 验证与边界
+
+最终验证：后端 unit **121 passed**（含 16 项新运行回归、独立连接预算竞争与迁移升级/回退/再升级）；Ruff lint/format 通过（67 文件）；Pyright 0 errors / 0 warnings；import-linter 5 kept。前端 type-check、oxlint、Prettier、5 项 Vitest/MSW、1 项 Playwright 浏览器桩、生产构建与 Storybook 构建通过；npm audit **0 vulnerabilities**。静态 Storybook 的未知计费徽标也在亮/暗主题实际打开并截图检查。Storybook 开发预览包有体积提示，不影响生产页面构建。
+
+后端使用本机独立 Python 3.14 验证环境，SQLite/内存对象存储/Gateway 桩；竞争测试用临时 SQLite 文件和独立连接。前端使用 Node 24.14、MSW 以及本机 Edge 无头浏览器。浏览器桩截图检查了亮色、暗色、900px 窄屏和无横向溢出；并非真实 Gateway E2E。
+
+未部署、未连接 91/92、未消耗真实模型预算。未更新 docs/。三级预算、Redis Streams/AIMD、跨运行缓存、事实层/治理工作台和 M2 仍是待办，见 [实施验收记录](../datafactory/design/IMPLEMENTATION_STATUS.md)。
+
+回退：未产生实际调用前，可在停服务、备份后用 `uv run alembic downgrade 0004_runtime_integrity` 撤销新增表字段并配套恢复上一版代码；已有真实调用或检查点时禁止直接降级丢账，恢复同一时点的数据库、对象存储和代码备份。回退过程不得触碰 92。
+
+<a id="datafactory-foundation-20261116"></a>
+
+## 2026-11-16：DataFactory 基础纠偏
+
+本次核查产品设计、后端路由/仓储/引擎/Worker/Gateway、前端实际请求与部署配置。完整发现、修复与未实现范围见 [实施与验收记录](../datafactory/design/IMPLEMENTATION_STATUS.md)。此次只操作本地文件与隔离测试，不连接 91/92，不调用真实模型。
+
+### 复现与定位
+
+1. 原测试 69 项能通过，但未调用 ProductionService 完整链路。构造两个不同所有者的项目，把第二项目的 snapshot_id 放入第一项目路径；原详情/segments/health/staleness/preview/run 缺归属校验。
+2. 对照前端审核请求和 FastAPI 路由，review_sample/get_release 定义存在但没有装饰器；若服务进入错误分支，又因 DFError 只收一个参数而被双位置参数触发 TypeError。
+3. 检查 pipeline/run.py，原代码按配置顺序执行，不使用 column_order；seed 缺少模板使用的 parts；固定候选分 0.5、缺省评审分 8 会制造未经验证的质量结果。
+4. 对照 Gateway 模型调用：chat 读取 history，而列传 prompt；rerank 读取 texts，而列传 documents。修正客户端组装并用同一桩链路校验生成、召回、评分和挖掘。
+5. 检查 export：ReleaseCorpus 为空，文本适配器将引用映射成空正文。改为完整游标读取冻结语料，增加超过 1025 切片的服务级导出回归。
+6. 将 Alembic 全链升级到临时 SQLite，并与 Base.metadata 核对，确认 0003 缺 run.limit_n/error/user_id。追加 0004，不修改已存在迁移。新增自动升级→回退到 0003→升级→列一致性检查。
+7. Gateway 契约测试原在 test/testcases/restful_api，父 conftest 要求真实模型密钥。移到 test/unit_test/api，保持所有外部依赖为桩，覆盖未知资产桶及不同维度拒绝。
+
+### 修复后复查步骤
+
+1. 在 datafactory/backend 的独立环境运行 `uv run pytest tests/unit`；确认跨项目所有入口均返回 404、无权限返回 403、缺记录为稳定 404，审核入口可调用。
+2. 运行 `uv run ruff check src tests alembic`、`uv run ruff format --check src tests alembic`、`uv run pyright`、`uv run lint-imports`。导入检查必须覆盖实际的 app→pipeline→服务→store/gateway→domain→core，不能只屏蔽不存在的模块。
+3. 根目录运行 `uv run pytest --noconftest test/unit_test/api/test_gateway_contract.py`。该文件是单元桩测试，无真实服务依赖。
+4. 按 [本地验证与部署准备](operations.md#datafactory-validation) 生成 OpenAPI、生成前端类型并构建。生成类型应覆盖请求字段及响应字段，不保留手写同名接口。
+5. 重新登录后确认 cookie 有绝对过期签名，应用缺少长随机会话密钥或对象存储凭据时明确拒绝启动。不得恢复固定默认签名密钥或隐式内存资产存储。
+6. 无 teacher/judge 的样本应被门禁阻断；不能通过填入默认高分恢复“能发布”。当前尚无预算与完整门禁，因此不使用真实模型流程作为本阶段验收。
+
+### 环境与回退
+
+验证结果：后端 105 项单元测试、Gateway 13 项桩契约通过；Ruff lint/format、Pyright（src/tests/alembic 显式范围）、5 项依赖约束通过；前端 OpenAPI 生成、类型检查、Vite 构建通过；Compose 仅 config --quiet 校验通过。最后对评分类型收窄另跑 mining 专项回归。未执行真实知识库、UI 交互/主题、容量及 Python 3.13 镜像验收。整仓 git diff --check 被原有根 CLAUDE.md 的 Windows reparse-point 读取失败阻碍，限定 files 文档检查通过；未修改该根文件。
+
+本地已有 backend/.venv 是 Linux 虚拟环境，Windows 无法执行，未覆盖它。验证使用 `C:/Users/11254/.cache/datafactory/venv314`（Python 3.14.3）；Pyright 使用该目录下临时配置和显式 src/tests/alembic 检查范围。Linux/91 的 Python 3.13 镜像验收尚未执行。
+
+尚未部署，因而没有远端应用回退操作。若后续在独立开发库应用 0004，回退前停止 DataFactory API/Worker 并备份库，再执行 `uv run alembic downgrade 0003_production`；它会删除幂等记录及三个运行字段，应与对应代码版本一起恢复。不得对生产共享库执行此流程。不要整仓 git reset/clean：本次开始前已有用户未提交的 Gateway、Nginx 和 DataFactory 改动。
 
 <a id="date-2026-11-04"></a>
 

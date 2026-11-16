@@ -1,0 +1,55 @@
+{
+  "name": "datafactory-web",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite --port 9391",
+    "build": "tsc -b && vite build",
+    "type-check": "tsc --noEmit",
+    "preview": "vite preview --port 9391",
+    "gen:api": "openapi-typescript openapi.json -o src/api/schema.d.ts",
+    "test": "vitest run",
+    "lint": "oxlint src",
+    "format": "prettier --write src",
+    "format:check": "prettier --check src",
+    "e2e": "playwright test",
+    "storybook": "storybook dev -p 6006",
+    "build-storybook": "storybook build"
+  },
+  "dependencies": {
+    "@tanstack/react-query": "^5.107.1",
+    "i18next": "^27.1.2",
+    "js-base64": "^3.7.7",
+    "jsencrypt": "^3.3.2",
+    "openapi-fetch": "^0.17.0",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "react-i18next": "^18.0.1",
+    "react-router-dom": "^7.18.5",
+    "uuid": "^14.0.3"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.65.1",
+    "@storybook/react-vite": "^10.6.7",
+    "@testing-library/react": "^16.3.3",
+    "@testing-library/user-event": "^14.6.12",
+    "@types/react": "^18.3.12",
+    "@types/react-dom": "^18.3.1",
+    "@vitejs/plugin-react": "^4.3.4",
+    "jsdom": "^29.1.1",
+    "msw": "^2.15.0",
+    "openapi-typescript": "^7.13.0",
+    "oxlint": "^1.93.0",
+    "prettier": "^3.10.1",
+    "storybook": "^10.6.7",
+    "typescript": "^5.6.3",
+    "vite": "^7.3.8",
+    "vitest": "^5.1.0"
+  },
+  "overrides": {
+    "@joshwooding/vite-plugin-react-docgen-typescript": {
+      "glob": "^14.0.6"
+    }
+  }
+}

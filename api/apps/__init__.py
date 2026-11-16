@@ -361,6 +361,10 @@ def register_page(page_path):
     page_name = getattr(page, "page_name", page_name)
     restful_api_path = "\\restful_apis\\" if sys.platform.startswith("win") else "/restful_apis/"
     url_prefix = f"/api/{API_VERSION}" if restful_api_path in path else f"/{API_VERSION}/{page_name}"
+    if page_name == "gateway":
+        url_prefix = f"/api/{API_VERSION}/gateway"
+    if page_name == "gateway":
+        url_prefix = f"/api/{API_VERSION}/gateway"
 
     app.register_blueprint(page.manager, url_prefix=url_prefix)
     return url_prefix
@@ -373,7 +377,14 @@ pages_dir = [
     Path(__file__).parent.parent / "api" / "apps" / "sdk",
 ]
 
-client_urls_prefix = [register_page(path) for directory in pages_dir for path in search_pages_path(directory)]
+_seen_pages = set()
+client_urls_prefix = []
+for _directory in pages_dir:
+    for _path in search_pages_path(_directory):
+        if _path in _seen_pages:
+            continue
+        _seen_pages.add(_path)
+        client_urls_prefix.append(register_page(_path))
 
 # Register backward compatibility routes for deprecated APIs
 from api.apps.backward_compat import register_backward_compat_routes
