@@ -1,5 +1,8 @@
 """Golden exports. A fixed release must produce fixed bytes for every adapter."""
 
+import json
+from pathlib import Path
+
 import pytest
 
 from datafactory.adapters import (
@@ -80,3 +83,48 @@ def test_every_adapter_is_deterministic():
     for exporter in (export_beir, export_sentence_transformers, export_flagembedding):
         assert exporter(_SAMPLES, _CORPUS).files == exporter(list(reversed(_SAMPLES)), _CORPUS).files
     assert export_canonical(_SAMPLES, _CORPUS).files == export_canonical(_SAMPLES, _CORPUS).files
+
+
+@pytest.mark.parametrize("exporter", [export_beir, export_flagembedding, export_sentence_transformers])
+def test_text_adapters_reject_image_negatives_and_subset_removes_the_whole_sample(exporter):
+    samples = [ReleaseSample("mixed", "Q", "test", ["seg_1"], ["image"]), _SAMPLES[1]]
+    corpus = ReleaseCorpus({**_CORPUS.segments, "image": ""}, {**_CORPUS.modalities, "image": "image"})
+    with pytest.raises(AdapterError) as error:
+        exporter(samples, corpus)
+    assert any(item.sample_id == "mixed" for item in error.value.issues)
+    assert exporter(samples, corpus, text_only=True).files == exporter([_SAMPLES[1]], corpus).files
+
+
+def test_sentence_transformers_preserves_all_positives_and_rejects_blank_negative_padding():
+    sample = ReleaseSample("q", "Q", "train", ["seg_1", "seg_2"], ["seg_2"])
+    assert export_sentence_transformers([sample], _CORPUS).files["train.jsonl"].count("\n") == 2
+    with pytest.raises(AdapterError):
+        export_sentence_transformers([sample, ReleaseSample("q2", "Q2", "train", ["seg_1"], [])], _CORPUS)
+
+
+def test_same_split_order_is_stable_for_all_text_exports():
+    samples = [
+        ReleaseSample("q2", "B", "test", ["seg_2"], ["seg_1"]),
+        ReleaseSample("q1", "A", "test", ["seg_1"], ["seg_2"]),
+    ]
+    for exporter in (export_canonical, export_beir, export_flagembedding, export_sentence_transformers):
+        assert exporter(samples, _CORPUS).files == exporter(list(reversed(samples)), _CORPUS).files
+
+
+@pytest.mark.parametrize(
+    "name,exporter",
+    [
+        ("canonical", export_canonical),
+        ("beir", export_beir),
+        ("sentence_transformers", export_sentence_transformers),
+        ("flagembedding", export_flagembedding),
+    ],
+)
+def test_text_export_golden_bytes(name, exporter):
+    expected = json.loads((Path(__file__).parents[1] / "fixtures" / "text_exports.json").read_text(encoding="utf-8"))[
+        name
+    ]
+    actual = exporter(_SAMPLES, _CORPUS).files
+    assert {path: value.encode("utf-8") for path, value in actual.items()} == {
+        path: value.encode("utf-8") for path, value in expected.items()
+    }

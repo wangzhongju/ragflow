@@ -219,15 +219,17 @@ async def test_model_reserves_before_send_settles_actual_and_replays_success(ses
     assert "private prompt" not in str(record.request)
 
 
-async def test_uncertain_result_keeps_reservation_and_cannot_be_resent(session, app):
+@pytest.mark.parametrize("message", ["Provider may have billed this request", ""])
+async def test_uncertain_result_keeps_reservation_and_cannot_be_resent(session, app, message):
     model, gateway = await _model(session, app)
-    gateway.invoke.side_effect = httpx.ReadTimeout("Provider may have billed this request")
+    gateway.invoke.side_effect = httpx.ReadTimeout(message)
     for _ in range(2):
         with pytest.raises(BilledUnknown):
             await model.invoke("model", "chat", {}, column="query", row_key="row")
     assert gateway.invoke.call_count == 1
     record = await session.scalar(select(InvocationRow))
     assert record.status == "billed_unknown"
+    assert record.error == (message or "ReadTimeout")
     row = await session.get(RunRow, "run", populate_existing=True)
     assert row.reserved_tokens == record.token_upper_bound
 

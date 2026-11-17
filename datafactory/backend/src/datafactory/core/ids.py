@@ -7,6 +7,7 @@ from here.
 from ulid import ULID
 
 PREFIXES = {
+    "audit": "aud",
     "project": "prj",
     "snapshot": "snap",
     "document": "doc",

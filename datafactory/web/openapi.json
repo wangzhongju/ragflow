@@ -5,10 +5,86 @@
     "version": "0.1.0"
   },
   "paths": {
+    "/api/factory/v1/assets/{asset_id}": {
+      "get": {
+        "summary": "Asset Download",
+        "operationId": "asset_download_api_factory_v1_assets__asset_id__get",
+        "parameters": [
+          {
+            "name": "asset_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Asset Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/factory/v1/session": {
+      "post": {
+        "summary": "Sign In",
+        "description": "Start a DataFactory session with RAGFlow account credentials.",
+        "operationId": "sign_in_api_factory_v1_session_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LoginIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Me"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/factory/v1/me": {
       "get": {
         "summary": "Me",
-        "description": "Resolve the browser's RAGFlow login into a platform session.\n\nA valid RAGFlow token is exchanged once. Later calls send the platform\ncookie instead of the RAGFlow token, so workers never need it.",
+        "description": "Read the platform session or bootstrap it with an existing RAGFlow login.",
         "operationId": "me_api_factory_v1_me_get",
         "responses": {
           "200": {
@@ -730,6 +806,131 @@
                     "$ref": "#/components/schemas/Model"
                   },
                   "title": "Response Ragflow Models Api Factory V1 Ragflow Models Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/factory/v1/projects/{project_id}/runs/{run_id}/budget": {
+      "put": {
+        "summary": "Adjust Run Budget",
+        "operationId": "adjust_run_budget_api_factory_v1_projects__project_id__runs__run_id__budget_put",
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Project Id"
+            }
+          },
+          {
+            "name": "run_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Run Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BudgetIn"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RunRecord"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/factory/v1/projects/{project_id}/runs/{run_id}/invocations/{invocation_id}:reconcile": {
+      "post": {
+        "summary": "Reconcile Invocation",
+        "operationId": "reconcile_invocation_api_factory_v1_projects__project_id__runs__run_id__invocations__invocation_id__reconcile_post",
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Project Id"
+            }
+          },
+          {
+            "name": "run_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Run Id"
+            }
+          },
+          {
+            "name": "invocation_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Invocation Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReconcileIn"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RunRecord"
                 }
               }
             }
@@ -1675,6 +1876,23 @@
             }
           }
         ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/ReleaseIn"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Body"
+              }
+            }
+          }
+        },
         "responses": {
           "201": {
             "description": "Successful Response",
@@ -1850,10 +2068,95 @@
           }
         }
       }
+    },
+    "/api/factory/v1/projects/{project_id}/releases/{release_id}/package": {
+      "get": {
+        "summary": "Download Release",
+        "operationId": "download_release_api_factory_v1_projects__project_id__releases__release_id__package_get",
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Project Id"
+            }
+          },
+          {
+            "name": "release_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Release Id"
+            }
+          },
+          {
+            "name": "adapter",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "canonical",
+              "title": "Adapter"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
     }
   },
   "components": {
     "schemas": {
+      "BudgetIn": {
+        "properties": {
+          "max_tokens": {
+            "type": "integer",
+            "exclusiveMaximum": 2147483648.0,
+            "minimum": 1.0,
+            "title": "Max Tokens"
+          },
+          "max_invocations": {
+            "type": "integer",
+            "exclusiveMaximum": 2147483648.0,
+            "minimum": 1.0,
+            "title": "Max Invocations"
+          },
+          "reason": {
+            "type": "string",
+            "maxLength": 2000,
+            "minLength": 1,
+            "title": "Reason"
+          }
+        },
+        "type": "object",
+        "required": [
+          "max_tokens",
+          "max_invocations",
+          "reason"
+        ],
+        "title": "BudgetIn"
+      },
       "CheckpointRecord": {
         "properties": {
           "stage": {
@@ -2466,6 +2769,31 @@
         ],
         "title": "InvocationRecord"
       },
+      "LoginIn": {
+        "properties": {
+          "email": {
+            "type": "string",
+            "maxLength": 255,
+            "minLength": 1,
+            "title": "Email"
+          },
+          "password": {
+            "type": "string",
+            "maxLength": 4096,
+            "minLength": 1,
+            "format": "password",
+            "title": "Password",
+            "description": "RSA-encrypted RAGFlow password.",
+            "writeOnly": true
+          }
+        },
+        "type": "object",
+        "required": [
+          "email",
+          "password"
+        ],
+        "title": "LoginIn"
+      },
       "Me": {
         "properties": {
           "user_id": {
@@ -2874,6 +3202,28 @@
         "title": "RecipeSummary",
         "description": "A recipe as listed."
       },
+      "ReconcileIn": {
+        "properties": {
+          "actual_tokens": {
+            "type": "integer",
+            "exclusiveMaximum": 2147483648.0,
+            "minimum": 0.0,
+            "title": "Actual Tokens"
+          },
+          "reason": {
+            "type": "string",
+            "maxLength": 2000,
+            "minLength": 1,
+            "title": "Reason"
+          }
+        },
+        "type": "object",
+        "required": [
+          "actual_tokens",
+          "reason"
+        ],
+        "title": "ReconcileIn"
+      },
       "Region": {
         "properties": {
           "page": {
@@ -2921,6 +3271,18 @@
         "title": "Region",
         "description": "Where inside an asset a part comes from. Cropping does not create an asset."
       },
+      "ReleaseIn": {
+        "properties": {
+          "warning_reason": {
+            "type": "string",
+            "maxLength": 2000,
+            "title": "Warning Reason",
+            "default": ""
+          }
+        },
+        "type": "object",
+        "title": "ReleaseIn"
+      },
       "ReleaseRecord": {
         "properties": {
           "id": {
@@ -2945,6 +3307,11 @@
             },
             "type": "array",
             "title": "Gates"
+          },
+          "manifest": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Manifest"
           }
         },
         "type": "object",

@@ -20,18 +20,20 @@ class Settings(BaseSettings):
     env: Literal["dev", "prod"] = "dev"
     host: str = "localhost"
 
-    database_url: str = "mysql+asyncmy://datafactory:datafactory@127.0.0.1:3306/datafactory_dev_localhost"
-    redis_url: str = "redis://127.0.0.1:6379/0"
+    database_url: str = Field(
+        default="mysql+asyncmy://datafactory:datafactory@127.0.0.1:3306/datafactory_dev_localhost", repr=False
+    )
+    redis_url: str = Field(default="redis://127.0.0.1:6379/0", repr=False)
     redis_prefix: str = "df:dev:localhost:"
 
     minio_endpoint: str = "127.0.0.1:9000"
-    minio_access_key: str = ""
-    minio_secret_key: str = ""
+    minio_access_key: str = Field(default="", repr=False)
+    minio_secret_key: str = Field(default="", repr=False)
     minio_bucket: str = "datafactory-dev-localhost"
     minio_secure: bool = False
 
     gateway_base_url: str = "http://127.0.0.1:9380/api/v1"
-    gateway_service_key: str = ""
+    gateway_service_key: str = Field(default="", repr=False)
     gateway_version: str = "1"
     gateway_timeout_s: float = 60.0
 
@@ -77,7 +79,7 @@ class GatewaySettings(BaseSettings):
     model_config = SettingsConfigDict(env_prefix="DF_", extra="ignore")
 
     gateway_base_url: str = "http://127.0.0.1:9380/api/v1"
-    gateway_service_key: str = ""
+    gateway_service_key: str = Field(default="", repr=False)
     gateway_version: str = "1"
     gateway_timeout_s: float = Field(default=60.0)
 

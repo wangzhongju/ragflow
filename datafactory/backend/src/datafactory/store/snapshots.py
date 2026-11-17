@@ -22,7 +22,7 @@ from datafactory.domain.content import (
 )
 from datafactory.domain.snapshot import SnapshotDraft
 from datafactory.store.objects import ObjectStore
-from datafactory.store.tables import AssetRow, SegmentRow, SnapshotRow, SourceDocumentRow
+from datafactory.store.tables import AssetRow, SegmentRow, SnapshotAssetRow, SnapshotRow, SourceDocumentRow
 
 
 class SnapshotRecord:
@@ -94,6 +94,16 @@ class SnapshotRepository:
                 select(SourceDocumentRow.doc_id).where(SourceDocumentRow.snapshot_id == snapshot_id)
             )
         )
+        linked = set(
+            await self._session.scalars(
+                select(SnapshotAssetRow.asset_id).where(SnapshotAssetRow.snapshot_id == snapshot_id)
+            )
+        )
+        referenced = {part.asset_id for segment in draft.segments for part in segment.parts if part.asset_id}
+        if referenced - known_assets:
+            raise ValueError("Snapshot references assets without frozen bytes.")
+        for asset_id in referenced - linked:
+            self._session.add(SnapshotAssetRow(asset_id=asset_id, snapshot_id=snapshot_id))
         for document in draft.documents:
             if document.doc_id in known_docs:
                 continue

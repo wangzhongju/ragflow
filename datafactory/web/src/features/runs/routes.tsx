@@ -6,7 +6,8 @@ import { api } from "../../api/client";
 import { formatNumber } from "../../lib/format";
 import { StatusBadge } from "../../ui/status-badge";
 import { RunKeys, useRunControl, useRunMetrics, useRuns } from "./api";
-import "./runs.css";
+import { AccountControls } from "./account-controls";
+import "../../styles/workbench.css";
 
 export function Component() {
   const { projectId = "" } = useParams();
@@ -310,6 +311,7 @@ function RunDetail({ project, runId }: { project: string; runId: string }) {
           <span>{t("calls")}</span>
         </li>
       </ul>
+      <AccountControls project={project} run={run} invocations={invocations} />
       <h2>{t("timeline")}</h2>
       {checkpoints.length === 0 ? (
         <p className="muted">{t("noCheckpoints")}</p>

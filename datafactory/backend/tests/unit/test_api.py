@@ -44,7 +44,7 @@ async def test_requests_without_a_session_are_rejected(app):
     assert response.json()["code"] == "unauthorized"
 
 
-async def test_sign_in_sets_the_session_cookie(app, gateway):
+async def test_ragflow_token_bootstraps_the_platform_session(app, gateway):
     gateway(lambda _request: _envelope({"user_id": "u9", "tenant_ids": ["t1"], "nickname": "Ada", "lang": "zh"}))
     transport = httpx.ASGITransport(app=app)
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as http:
@@ -53,6 +53,54 @@ async def test_sign_in_sets_the_session_cookie(app, gateway):
     assert response.json()["user_id"] == "u9"
     _name, value = session_cookie("u9", app.state.settings.session_secret)
     assert response.headers["set-cookie"].startswith(f"{_name}={value};")
+
+
+async def test_password_login_establishes_a_session_independent_of_the_ragflow_token(app, gateway):
+    calls = []
+
+    def handler(request):
+        calls.append((request.method, request.url.path))
+        assert request.headers["x-df-service-key"] == "secret"
+        assert "authorization" not in request.headers
+        assert "x-df-user-id" not in request.headers
+        assert json.loads(request.content) == {"email": "ada@example.org", "password": "ciphertext"}
+        return _envelope({"user_id": "u9", "tenant_ids": ["t1"], "nickname": "Ada", "lang": "zh"})
+
+    gateway(handler)
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as http:
+        login = await http.post("/api/factory/v1/session", json={"email": "ada@example.org", "password": "ciphertext"})
+        assert login.status_code == 200
+        assert "httponly" in login.headers["set-cookie"].lower()
+        assert "authorization" not in login.headers
+        me = await http.get("/api/factory/v1/me", headers={"Authorization": "Bearer replaced-token"})
+        assert me.status_code == 200
+        assert me.json()["user_id"] == "u9"
+        assert (await http.get("/api/factory/v1/projects")).status_code == 200
+    assert calls == [("POST", "/api/v1/gateway/session")]
+
+
+async def test_invalid_credentials_do_not_issue_a_platform_cookie(app, gateway):
+    gateway(lambda _request: _envelope(None, code=401, status=401))
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as http:
+        response = await http.post(
+            "/api/factory/v1/session", json={"email": "ada@example.org", "password": "ciphertext"}
+        )
+        assert response.status_code == 401
+        assert response.json()["code"] == "invalid_credentials"
+        assert "set-cookie" not in response.headers
+        assert (await http.get("/api/factory/v1/projects")).status_code == 401
+
+
+@pytest.mark.parametrize(
+    ("gateway_status", "status", "code"), [(401, 401, "unauthorized"), (503, 502, "gateway_unavailable")]
+)
+async def test_sign_in_distinguishes_rejected_tokens_from_gateway_failures(app, gateway, gateway_status, status, code):
+    gateway(lambda _request: httpx.Response(gateway_status, json={"code": gateway_status, "message": "Session error"}))
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as http:
+        response = await http.get("/api/factory/v1/me", headers={"Authorization": "Bearer expired"})
+    assert response.status_code == status
+    assert response.json()["code"] == code
+    assert "set-cookie" not in response.headers
 
 
 async def test_project_lifecycle(client):

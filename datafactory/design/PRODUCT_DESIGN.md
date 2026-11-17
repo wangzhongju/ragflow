@@ -10,7 +10,7 @@
 
 本文以当前代码为准。凡写明"代码位置"的结论均已对照本地源码核对；外部框架格式（训练框架数据格式）在实现适配器时须再次对照其官方文档。
 
-2026-11-16 实施范围为 M0、M1、M2，M3–M5 不在本次范围。本文中的目标能力不等同于已交付功能；完整核查、已修复项、未完成项及验证证据集中记录在 [实施与验收记录](IMPLEMENTATION_STATUS.md)。当前完成基础纠偏及可恢复运行/调用台账阶段，尚未通过 M0–M2 整体验收。
+2026-11-16 实施范围为 M0、M1、M2，M3–M5 不在本次范围。本文中的目标能力不等同于已交付功能；完整核查、已修复项、未完成项及验证证据集中记录在 [实施与验收记录](IMPLEMENTATION_STATUS.md)。当前已实施基础纠偏、可恢复运行/调用台账、资产与划分治理、冻结发布包，并部署到 91 独立开发环境；指定真实知识库的小预算文本链路和图片冻结已验证，尚未通过 M0–M2 整体验收。实际操作见 [使用手册](../USER_GUIDE.md)，测试边界与待核实账目见 [验收报告](../VALIDATION_REPORT.md)。
 
 ---
 
@@ -235,11 +235,12 @@ flowchart LR
 
 ### 5.2 端点契约（v1）
 
-所有请求头：`X-DF-Service-Key`、`X-DF-User-Id`、`X-DF-Request-Id`（幂等与追踪）。响应统一 `{"code": 0, "data": ..., "message": ""}`，与 RAGFlow 一致。
+知识库和模型请求携带 `X-DF-Service-Key`、`X-DF-User-Id` 与 `X-DF-Request-Id`。会话端点按下表认证。响应统一为 `{"code": 0, "data": ..., "message": ""}`。
 
 | 方法与路径 | 输入 | 输出 | 实现 |
 |----|----|----|----|
 | `GET /gateway/session` | 用户 `Authorization`（JWT） | `user_id, tenant_ids, nickname, lang` | 平台校验前端登录态，`login_required(auth_types=[AUTH_JWT])` |
+| `POST /gateway/session` | `X-DF-Service-Key`、邮箱和 RSA 密文密码 | `user_id, tenant_ids, nickname, lang` | 调用 RAGFlow 的密码校验，只读账号和租户身份 |
 | `GET /gateway/datasets` | — | 用户可访问知识库：`id, name, tenant_id, embd_id, tenant_embd_id, vector_dim, parser_id, pipeline_id, doc_num, chunk_num, similarity_threshold, vector_similarity_weight` | `KnowledgebaseService` + 维度探测 |
 | `POST /gateway/documents:list` | `kb_id, doc_ids?, page_cursor` | `id, name, suffix, type, size, content_hash, chunk_num, run, progress, update_time, parser_id, pipeline_id` | `DocumentService` |
 | `POST /gateway/chunks:scan` | `kb_id, doc_ids[], fields[], include_vector, include_unavailable` | NDJSON 流，每行一个规范化切片，末行 `{"_eof": true, "doc_id": ..., "count": n}` | 按文档 `chunk_list(retrieve_all=True, sort_by_position=True)` |
@@ -890,7 +891,7 @@ class ExportAdapter(Protocol):
   侧栏 220px，可折叠为 56px 图标栏；审核数为待办徽标；底部常驻项目预算条
 ```
 
-- 登录：同源复用 RAGFlow 登录态（`localStorage` 的 `Authorization`）；无有效令牌时进入 `/factory/login`（调用 RAGFlow 登录接口）。平台后端经 Gateway `session` 校验令牌。
+- 登录守卫优先使用有效的 DataFactory `df_session`。首次使用时，同源页面可由 `/me` 验证 RAGFlow `Authorization` 后建立平台会话。登录表单提交到 DataFactory `POST /api/factory/v1/session`，平台经 Gateway 校验账号并签发有期限的 HttpOnly Cookie。两个平台各自管理会话。
 - RAGFlow 主导航增加一个"数据工厂"入口（外链到 `/factory`），这是 RAGFlow 前端的唯一改动。
 
 ### 12.4 概览

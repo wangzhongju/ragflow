@@ -18,7 +18,7 @@ def upgrade() -> None:
         sa.Column("resource_id", sa.String(40), nullable=False),
     )
     op.add_column("run", sa.Column("limit_n", sa.Integer, nullable=False, server_default="0"))
-    op.add_column("run", sa.Column("error", sa.Text, nullable=False, server_default=""))
+    op.add_column("run", sa.Column("error", sa.Text, nullable=False, server_default=sa.text("('')")))
     op.add_column("run", sa.Column("user_id", sa.String(64), nullable=False, server_default=""))
 
 

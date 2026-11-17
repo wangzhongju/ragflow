@@ -4,6 +4,43 @@
  */
 
 export interface paths {
+    "/api/factory/v1/assets/{asset_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Asset Download */
+        get: operations["asset_download_api_factory_v1_assets__asset_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/factory/v1/session": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Sign In
+         * @description Start a DataFactory session with RAGFlow account credentials.
+         */
+        post: operations["sign_in_api_factory_v1_session_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/factory/v1/me": {
         parameters: {
             query?: never;
@@ -13,10 +50,7 @@ export interface paths {
         };
         /**
          * Me
-         * @description Resolve the browser's RAGFlow login into a platform session.
-         *
-         *     A valid RAGFlow token is exchanged once. Later calls send the platform
-         *     cookie instead of the RAGFlow token, so workers never need it.
+         * @description Read the platform session or bootstrap it with an existing RAGFlow login.
          */
         get: operations["me_api_factory_v1_me_get"];
         put?: never;
@@ -269,6 +303,40 @@ export interface paths {
         get: operations["ragflow_models_api_factory_v1_ragflow_models_get"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/factory/v1/projects/{project_id}/runs/{run_id}/budget": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Adjust Run Budget */
+        put: operations["adjust_run_budget_api_factory_v1_projects__project_id__runs__run_id__budget_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/factory/v1/projects/{project_id}/runs/{run_id}/invocations/{invocation_id}:reconcile": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Reconcile Invocation */
+        post: operations["reconcile_invocation_api_factory_v1_projects__project_id__runs__run_id__invocations__invocation_id__reconcile_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -671,10 +739,36 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/factory/v1/projects/{project_id}/releases/{release_id}/package": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Download Release */
+        get: operations["download_release_api_factory_v1_projects__project_id__releases__release_id__package_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        /** BudgetIn */
+        BudgetIn: {
+            /** Max Tokens */
+            max_tokens: number;
+            /** Max Invocations */
+            max_invocations: number;
+            /** Reason */
+            reason: string;
+        };
         /** CheckpointRecord */
         CheckpointRecord: {
             /** Stage */
@@ -898,6 +992,17 @@ export interface components {
             /** Error */
             error: string;
         };
+        /** LoginIn */
+        LoginIn: {
+            /** Email */
+            email: string;
+            /**
+             * Password
+             * Format: password
+             * @description RSA-encrypted RAGFlow password.
+             */
+            password: string;
+        };
         /**
          * Me
          * @description The signed-in user.
@@ -1101,6 +1206,13 @@ export interface components {
             /** Version */
             version: number;
         };
+        /** ReconcileIn */
+        ReconcileIn: {
+            /** Actual Tokens */
+            actual_tokens: number;
+            /** Reason */
+            reason: string;
+        };
         /**
          * Region
          * @description Where inside an asset a part comes from. Cropping does not create an asset.
@@ -1112,6 +1224,14 @@ export interface components {
             bbox?: number[] | null;
             /** Time Span Ms */
             time_span_ms?: number[] | null;
+        };
+        /** ReleaseIn */
+        ReleaseIn: {
+            /**
+             * Warning Reason
+             * @default
+             */
+            warning_reason: string;
         };
         /**
          * ReleaseRecord
@@ -1128,6 +1248,10 @@ export interface components {
             sample_count: number;
             /** Gates */
             gates: components["schemas"]["GateRecord"][];
+            /** Manifest */
+            manifest?: {
+                [key: string]: unknown;
+            };
         };
         /**
          * ReviewIn
@@ -1373,6 +1497,70 @@ export interface components {
 }
 export type $defs = Record<string, never>;
 export interface operations {
+    asset_download_api_factory_v1_assets__asset_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                asset_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    sign_in_api_factory_v1_session_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["LoginIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Me"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     me_api_factory_v1_me_get: {
         parameters: {
             query?: never;
@@ -1875,6 +2063,79 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Model"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    adjust_run_budget_api_factory_v1_projects__project_id__runs__run_id__budget_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                run_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["BudgetIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RunRecord"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    reconcile_invocation_api_factory_v1_projects__project_id__runs__run_id__invocations__invocation_id__reconcile_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                run_id: string;
+                invocation_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ReconcileIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RunRecord"];
                 };
             };
             /** @description Validation Error */
@@ -2489,7 +2750,11 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["ReleaseIn"] | null;
+            };
+        };
         responses: {
             /** @description Successful Response */
             201: {
@@ -2595,6 +2860,40 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ReleaseRecord"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    download_release_api_factory_v1_projects__project_id__releases__release_id__package_get: {
+        parameters: {
+            query?: {
+                adapter?: string;
+            };
+            header?: never;
+            path: {
+                project_id: string;
+                release_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
                 };
             };
             /** @description Validation Error */

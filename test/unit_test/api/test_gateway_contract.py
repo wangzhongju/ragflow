@@ -23,8 +23,6 @@ detection, and model-call accounting.
 
 import asyncio
 import importlib.util
-import json
-import os
 import sys
 from pathlib import Path
 from types import ModuleType, SimpleNamespace
@@ -83,14 +81,14 @@ class _Doc:
 
 
 class _Model:
-    def __init__(self, model_id, tenant_id, bit, factory="openai", name="embed"):
+    def __init__(self, model_id, tenant_id, bit, name="embed"):
         self.id = model_id
-        self.tenant_id = tenant_id
+        self.provider_id = f"provider-{tenant_id}"
+        self.instance_id = f"instance-{tenant_id}"
         self.model_type = bit
         self.status = "active"
-        self.llm_factory = factory
-        self.llm_name = name
-        self.max_tokens = 8192
+        self.model_name = name
+        self.extra = '{"max_tokens": 4096}'
 
 
 class _Store:
@@ -111,6 +109,8 @@ class _Store:
             "chk-2": {"id": "chk-2", "doc_id": "doc-a", "kb_id": "kb1", "content_with_weight": "beta", "available_int": 0, "position_int": [[1, 0, 10, 6, 9]], "q_4_vec": [0.0, 1.0, 0.0, 0.0]},
         }
         self.models = {"model-embed": _Model("model-embed", "tenant-1", 1 << 1), "model-chat": _Model("model-chat", "tenant-1", 1 << 0, name="chat")}
+        self.providers = {f"provider-{tenant}": SimpleNamespace(id=f"provider-{tenant}", tenant_id=tenant, provider_name="openai") for tenant in ("tenant-1", "tenant-9")}
+        self.instances = {f"instance-{tenant}": SimpleNamespace(id=f"instance-{tenant}", provider_id=f"provider-{tenant}", status="active") for tenant in ("tenant-1", "tenant-9")}
         self.members = {USER_ID: ["tenant-1"]}
         self.vector_reads = []
 
@@ -140,6 +140,7 @@ def _load(monkeypatch):
         DATA_ERROR = 102
         PERMISSION_ERROR = 108
         AUTHENTICATION_ERROR = 109
+        UNAUTHORIZED = 401
         EXCEPTION_ERROR = 100
         SERVER_ERROR = 500
         NOT_FOUND = 404
@@ -165,12 +166,17 @@ def _load(monkeypatch):
                     continue
                 if condition.get("doc_id") and chunk["doc_id"] not in condition["doc_id"]:
                     continue
+                if condition.get("img_id") and chunk.get("img_id") != condition["img_id"]:
+                    continue
                 excluded = condition.get("must_not", {}).get("id", [])
                 if chunk_id in excluded:
                     continue
                 hits.append({"_id": chunk_id, "_score": 0.9 if chunk_id == "chk-1" else 0.4, "_source": chunk})
             hits.sort(key=lambda item: item["_score"], reverse=True)
             return {"hits": {"hits": hits[:limit], "total": {"value": len(hits)}}}
+
+        def get_total(self, result):
+            return result["hits"]["total"]["value"]
 
         def get_fields(self, res, fields):
             out = {}
@@ -181,7 +187,7 @@ def _load(monkeypatch):
         def get_scores(self, res):
             return {hit["_id"]: hit["_score"] for hit in res["hits"]["hits"]}
 
-    settings = _install(monkeypatch, "common.settings", docStoreConn=_DocStore(), retriever=SimpleNamespace(), STORAGE_IMPL=SimpleNamespace(get=lambda bucket, key: b"\x89PNG\r\n\x1a\n"))
+    _install(monkeypatch, "common.settings", docStoreConn=_DocStore(), retriever=SimpleNamespace(), STORAGE_IMPL=SimpleNamespace(get=lambda bucket, key: b"\x89PNG\r\n\x1a\n"))
 
     class _Dealer:
         def __init__(self, store):
@@ -189,13 +195,13 @@ def _load(monkeypatch):
 
         def chunk_list(self, doc_id, tenant_id, kb_ids, max_count=1024, offset=0, fields=None, sort_by_position=False):
             rows = [chunk for chunk in STORE.chunks.values() if chunk["doc_id"] == doc_id]
-            return rows[offset:max_count]
+            return [{key: value for key, value in row.items() if key == "id" or key in (fields or [])} for row in rows[offset:max_count]]
 
         async def fetch_chunk_vectors(self, chunk_ids, tenant_id, kb_ids, dim):
             STORE.vector_reads.append(list(chunk_ids))
             return {chunk_id: STORE.chunks[chunk_id][f"q_{dim}_vec"] for chunk_id in chunk_ids if chunk_id in STORE.chunks}
 
-    search = _install(monkeypatch, "rag.nlp.search", Dealer=_Dealer, index_name=lambda tenant: f"ragflow_{tenant}")
+    _install(monkeypatch, "rag.nlp.search", Dealer=_Dealer, index_name=lambda tenant: f"ragflow_{tenant}")
     _install(monkeypatch, "rag.nlp")
     _install(monkeypatch, "rag")
 
@@ -245,20 +251,11 @@ def _load(monkeypatch):
 
     class _TenantModel:
         id = _Column("id")
-        tenant_id = _Column("tenant_id")
-        status = _Column("status")
 
         @staticmethod
         def get_or_none(condition):
             return STORE.models.get(getattr(condition, "value", None))
 
-        @staticmethod
-        def select():
-            return _TenantModel
-
-        @staticmethod
-        def where(*_args):
-            return list(STORE.models.values())
 
     class _Eq:
         def __init__(self, value):
@@ -277,6 +274,17 @@ def _load(monkeypatch):
             user_id = getattr(condition, "value", USER_ID)
             return [SimpleNamespace(tenant_id=tenant) for tenant in STORE.members.get(user_id, [])]
     _install(monkeypatch, "api.db.db_models", Document=_Doc, TenantModel=_TenantModel, UserTenant=_UserTenant)
+    _install(monkeypatch, "api.db.services.tenant_model_provider_service", TenantModelProviderService=SimpleNamespace(
+        get_by_tenant_id=lambda tenant: [provider for provider in STORE.providers.values() if provider.tenant_id == tenant],
+        get_by_id=lambda identifier: (identifier in STORE.providers, STORE.providers.get(identifier)),
+    ))
+    _install(monkeypatch, "api.db.services.tenant_model_instance_service", TenantModelInstanceService=SimpleNamespace(
+        get_all_by_provider_id=lambda identifier: [instance for instance in STORE.instances.values() if instance.provider_id == identifier],
+        get_by_id=lambda identifier: (identifier in STORE.instances, STORE.instances.get(identifier)),
+    ))
+    _install(monkeypatch, "api.db.services.tenant_model_service", TenantModelService=SimpleNamespace(
+        get_models_by_instance_id=lambda identifier: [model for model in STORE.models.values() if model.instance_id == identifier],
+    ))
 
     class _Bundle:
         def __init__(self, tenant_id, config):
@@ -304,8 +312,9 @@ def _load(monkeypatch):
             return "spoken"
 
     _install(monkeypatch, "api.db.services.llm_service", LLMBundle=_Bundle)
-    _install(monkeypatch, "api.db.joint_services.tenant_model_service", resolve_model_config=lambda tenant, kind, model_id: {"llm_factory": "openai", "llm_name": model_id, "model_type": kind})
-    _install(monkeypatch, "api.db.services.user_service", TenantService=SimpleNamespace(get_by_id=lambda tenant: (False, None)))
+    _install(monkeypatch, "api.db.joint_services.tenant_model_service", resolve_model_config=lambda tenant, kind, model_id: {"llm_factory": "openai", "llm_name": model_id, "model_type": kind}, resolve_model_id=lambda tenant, kind, reference: None)
+    _install(monkeypatch, "api.db.services.user_service", TenantService=SimpleNamespace(get_by_id=lambda tenant: (False, None)), UserService=SimpleNamespace(query_user=lambda *_args: pytest.fail("Unexpected credential verification")))
+    _install(monkeypatch, "api.utils.crypt", CryptPayloadError=ValueError, decrypt=lambda _value: "encoded-password")
     _install(monkeypatch, "common.doc_store.doc_store_base", MatchDenseExpr=lambda *args, **kwargs: SimpleNamespace(args=args), OrderByExpr=lambda: SimpleNamespace())
     _install(monkeypatch, "common.llm_request_context", normalize_llm_user_id=lambda value: value, set_llm_request_context=lambda **kwargs: "token", reset_llm_request_context=lambda token: None)
 
@@ -320,9 +329,9 @@ def _load(monkeypatch):
     service = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(service)
 
-    api_utils = _install(monkeypatch, "api.utils.api_utils", get_json_result=_json_result)
-    apps = _install(monkeypatch, "api.apps", AUTH_JWT="jwt", login_required=lambda **kwargs: (lambda func: func))
-    services_pkg = _install(monkeypatch, "api.apps.services", gateway_service=service)
+    _install(monkeypatch, "api.utils.api_utils", get_json_result=_json_result)
+    _install(monkeypatch, "api.apps", AUTH_JWT="jwt", login_required=lambda **kwargs: (lambda func: func))
+    _install(monkeypatch, "api.apps.services", gateway_service=service)
     quart = _install(monkeypatch, "quart", Response=_Response, request=_Request(), g=SimpleNamespace(user=SimpleNamespace(id=USER_ID, nickname="Ada", email="a@b.c", language="zh")))
 
     route_path = repo / "api" / "apps" / "restful_apis" / "gateway_api.py"
@@ -343,6 +352,8 @@ def _load(monkeypatch):
 
 @pytest.fixture
 def gateway(monkeypatch):
+    global STORE
+    STORE = _Store()
     monkeypatch.setenv("DATAFACTORY_SERVICE_KEY", SERVICE_KEY)
     STORE.vector_reads.clear()
     return _load(monkeypatch)
@@ -403,11 +414,39 @@ def test_scan_pages_without_skipping_and_can_attach_vectors(gateway):
     first = service.scan_batch("tenant-1", "kb1", "doc-a", 0, None)
     second = service.scan_batch("tenant-1", "kb1", "doc-a", 1, None)
     assert [row["chunk_id"] for row in first + second] == ["chk-1", "chk-2"]
+    assert all(row["kb_id"] == "kb1" and row["doc_id"] == "doc-a" for row in first + second)
     assert first[0]["bbox"] == [0.0, 0.0, 10.0, 5.0]
     attached = _run(service.attach_vectors("tenant-1", "kb1", first))
     assert attached[0]["vector"] == [1.0, 0.0, 0.0, 0.0]
     assert attached[0]["vector_dim"] == 4
     assert STORE.vector_reads == [["chk-1"]]
+
+
+def test_scan_custom_projection_keeps_required_identity(gateway):
+    service, _, _ = gateway
+    row = service.scan_batch("tenant-1", "kb1", "doc-a", 0, ["content_with_weight"])[0]
+    assert (row["chunk_id"], row["doc_id"], row["kb_id"]) == ("chk-1", "doc-a", "kb1")
+
+
+def test_models_use_provider_ownership_and_active_instance(gateway):
+    service, _, _ = gateway
+    STORE.models["foreign"] = _Model("foreign", "tenant-9", 1 << 1)
+    models = service.list_models(USER_ID, ["embedding"])
+    assert [model["model_id"] for model in models] == ["model-embed"]
+    assert models[0]["tenant_id"] == "tenant-1"
+    assert models[0]["factory"] == "openai"
+    assert models[0]["name"] == "embed"
+    assert models[0]["max_tokens"] == 4096
+    STORE.instances["instance-tenant-1"].status = "inactive"
+    assert service.list_models(USER_ID, None) == []
+    with pytest.raises(service.GatewayError, match="not active"):
+        _run(service.invoke_model(USER_ID, "model-chat", service.OP_CHAT, {}, None))
+
+
+def test_dataset_resolves_embedding_id_from_current_reference(gateway):
+    service, _, _ = gateway
+    STORE.kbs["kb1"].embd_id = "model-embed"
+    assert service.list_datasets(USER_ID)[0]["tenant_embd_id"] == "model-embed"
 
 
 def test_dense_search_returns_scores_and_rejects_a_short_query_vector(gateway):
@@ -418,6 +457,22 @@ def test_dense_search_returns_scores_and_rejects_a_short_query_vector(gateway):
     with pytest.raises(service.GatewayError) as caught:
         _run(service.search_dense(USER_ID, ["kb1"], {"vector": [1, 0]}, 5, None, 0.0))
     assert caught.value.code == 101
+
+
+def test_dense_scores_accept_client_response_objects(gateway):
+    service, _, _ = gateway
+    from collections import UserDict
+    response = UserDict({"hits": {"hits": [{"_id": "chunk", "_score": 0.91}]}})
+    dealer = service.search.Dealer(service.settings.docStoreConn)
+    assert service._knn_hits(dealer, response) == [("chunk", 0.91)]
+
+
+def test_dense_scores_read_named_dataframe_columns(gateway):
+    service, _, _ = gateway
+    class Frame(dict):
+        columns = ("id", "_score")
+    frame = Frame(id=["a", "b"], _score=[0.3, 0.8])
+    assert service._knn_hits(SimpleNamespace(dataStore=object()), (frame, 2)) == [("b", 0.8), ("a", 0.3)]
 
 
 def test_model_invoke_accounts_tokens_and_refuses_another_tenants_model(gateway):
@@ -453,14 +508,50 @@ def test_routes_require_the_user_header_and_stamp_the_version(gateway):
 
 
 def test_session_reports_tenants_and_language(gateway):
-    _service, routes, quart = gateway
+    _service, routes, _quart = gateway
     body, status = _run(routes.session())
     assert status == 200
     assert body.get_json()["data"]["tenant_ids"] == ["tenant-1", USER_ID]
 
 
+def test_password_session_requires_a_service_key(gateway):
+    _service, routes, quart = gateway
+    quart.request._body = {"email": "ada@example.org", "password": "ciphertext"}
+    assert _run(routes.password_session())[1] == 403
+
+
+def test_password_session_reads_identity_without_rotating_the_ragflow_token(gateway, monkeypatch):
+    service, routes, quart = gateway
+    user = SimpleNamespace(id=USER_ID, language="zh", nickname="Ada", is_active="1", access_token="current-token")
+
+    def query_user(email, password):
+        assert (email, password) == ("ada@example.org", "encoded-password")
+        return user
+
+    monkeypatch.setattr(service.UserService, "query_user", query_user)
+    quart.request.headers = {service.SERVICE_KEY_HEADER: SERVICE_KEY, service.USER_HEADER: OTHER_USER}
+    quart.request._body = {"email": "ada@example.org", "password": "ciphertext"}
+    body, status = _run(routes.password_session())
+    assert status == 200
+    assert body.get_json()["data"] == {"user_id": USER_ID, "tenant_ids": ["tenant-1", USER_ID], "nickname": "Ada", "lang": "zh"}
+    assert body.headers == {"X-Gateway-Version": "1"}
+    assert user.access_token == "current-token"
+
+
+@pytest.mark.parametrize("user", [None, SimpleNamespace(is_active="0")])
+def test_password_session_rejects_invalid_credentials_and_disabled_accounts(gateway, monkeypatch, user):
+    service, routes, quart = gateway
+    monkeypatch.setattr(service.UserService, "query_user", lambda *_args: user)
+    quart.request.headers = {service.SERVICE_KEY_HEADER: SERVICE_KEY}
+    quart.request._body = {"email": "ada@example.org", "password": "ciphertext"}
+    body, status = _run(routes.password_session())
+    assert status == 401
+    assert body.get_json()["data"] is None
+
+
 def test_asset_checks_access_and_missing_model_is_not_found(gateway):
     service, _routes, _quart = gateway
+    STORE.chunks["chk-1"]["img_id"] = "kb1-object"
     data, content_type = service.get_asset(USER_ID, "kb1-object")
     assert content_type == "image/png"
     assert data.startswith(b"\x89PNG")
@@ -470,6 +561,19 @@ def test_asset_checks_access_and_missing_model_is_not_found(gateway):
     with pytest.raises(service.GatewayError) as missing:
         _run(service.invoke_model(USER_ID, "missing", service.OP_CHAT, {}, None))
     assert missing.value.code == 404
+
+
+def test_shared_asset_bucket_requires_a_visible_chunk_reference(gateway, monkeypatch):
+    service, _, _ = gateway
+    STORE.chunks["chk-1"]["img_id"] = "imagetemps-image"
+    reads = []
+    monkeypatch.setattr(service.settings.STORAGE_IMPL, "get", lambda bucket, key: reads.append((bucket, key)) or b"image")
+    assert service.get_asset(USER_ID, "imagetemps-image")[0] == b"image"
+    assert reads == [("imagetemps", "image")]
+    with pytest.raises(service.GatewayError) as denied:
+        service.get_asset(OTHER_USER, "imagetemps-image")
+    assert denied.value.code == 108
+    assert len(reads) == 1
 
 
 def test_unknown_asset_bucket_is_denied_before_object_storage(gateway, monkeypatch):

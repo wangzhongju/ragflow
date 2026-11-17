@@ -26,16 +26,21 @@ not for scoring.
 """
 
 import hashlib
+import json
 import os
 import re
 import time
 
 from api.db.db_models import Document, TenantModel, UserTenant
-from api.db.joint_services.tenant_model_service import resolve_model_config
+from api.db.joint_services.tenant_model_service import resolve_model_config, resolve_model_id
 from api.db.services.document_service import DocumentService
 from api.db.services.knowledgebase_service import KnowledgebaseService
 from api.db.services.llm_service import LLMBundle
-from api.db.services.user_service import TenantService
+from api.db.services.tenant_model_instance_service import TenantModelInstanceService
+from api.db.services.tenant_model_provider_service import TenantModelProviderService
+from api.db.services.tenant_model_service import TenantModelService
+from api.db.services.user_service import TenantService, UserService
+from api.utils.crypt import CryptPayloadError, decrypt
 from common import settings
 from common.constants import LLMType, ModelTypeBinary, RetCode
 from common.doc_store.doc_store_base import MatchDenseExpr, OrderByExpr
@@ -127,6 +132,17 @@ class GatewayError(Exception):
 
 def gateway_enabled() -> bool:
     return bool(os.environ.get("DATAFACTORY_SERVICE_KEY", "").strip())
+
+
+def authenticate_user(email: str, encrypted_password: str):
+    """Verify a RAGFlow account for a caller that issues its own session."""
+    try:
+        user = UserService.query_user(email, decrypt(encrypted_password))
+    except CryptPayloadError:
+        user = None
+    if user is None or user.is_active != "1":
+        raise GatewayError(RetCode.UNAUTHORIZED, "Invalid RAGFlow credentials.")
+    return user
 
 
 def max_inflight() -> int:
@@ -236,7 +252,7 @@ def list_datasets(user_id: str) -> list[dict]:
             "name": kb["name"],
             "tenant_id": kb["tenant_id"],
             "embd_id": kb["embd_id"],
-            "tenant_embd_id": kb.get("tenant_embd_id"),
+            "tenant_embd_id": _embedding_model_id(kb),
             "vector_dim": vector_dim_of(kb["id"]),
             "parser_id": kb["parser_id"],
             "pipeline_id": kb.get("pipeline_id"),
@@ -248,6 +264,17 @@ def list_datasets(user_id: str) -> list[dict]:
         }
         for kb in kbs
     ]
+
+
+def _embedding_model_id(kb: dict) -> str | None:
+    reference = kb.get("tenant_embd_id") or kb["embd_id"]
+    model = TenantModel.get_or_none(TenantModel.id == reference)
+    if model is not None:
+        return model.id
+    try:
+        return resolve_model_id(kb["tenant_id"], LLMType.EMBEDDING.value, reference)
+    except LookupError:
+        return None
 
 
 def vector_dim_of(kb_id: str) -> int | None:
@@ -323,8 +350,9 @@ def scan_batch(tenant_id: str, kb_id: str, doc_id: str, offset: int, fields: lis
     asked for ``include_vector``.
     """
     selected = [field for field in (fields or _DEFAULT_SCAN_FIELDS) if field in SCAN_FIELDS]
-    if "doc_id" not in selected:
-        selected.append("doc_id")
+    for field in ("doc_id", "kb_id"):
+        if field not in selected:
+            selected.append(field)
     chunks = search.Dealer(settings.docStoreConn).chunk_list(
         doc_id,
         tenant_id,
@@ -469,17 +497,20 @@ async def search_production(user_id: str, kb_ids: list[str], question: str, top_
 
 
 def get_asset(user_id: str, img_id: str) -> tuple[bytes, str]:
-    """Return the raw bytes behind a chunk ``img_id`` after checking access.
-
-    ``img_id`` is ``{bucket}-{object_key}``. For chunk images the bucket is the
-    knowledge base id, so access is checked against it.
-    """
+    """Read an asset only when a visible knowledge base contains a reference to it."""
     parsed = parse_storage_composite_id(img_id)
     if not parsed:
         raise GatewayError(RetCode.ARGUMENT_ERROR, "Invalid image id.")
     bucket, object_key = parsed
-    ok, kb = KnowledgebaseService.get_by_id(bucket)
-    if not ok or not KnowledgebaseService.accessible(kb.id, user_id):
+    kbs, _ = KnowledgebaseService.get_by_tenant_ids(joined_tenant_ids(user_id), user_id, 0, 0, "create_time", True, "", None)
+    if not kbs:
+        raise GatewayError(RetCode.PERMISSION_ERROR, "Image is not accessible.")
+    references = settings.docStoreConn.search(
+        ["doc_id"], [], {"img_id": img_id}, [], OrderByExpr(), 0, 1,
+        [search.index_name(tenant) for tenant in {kb["tenant_id"] for kb in kbs}],
+        [kb["id"] for kb in kbs],
+    )
+    if not settings.docStoreConn.get_total(references):
         raise GatewayError(RetCode.PERMISSION_ERROR, "Image is not accessible.")
     data = settings.STORAGE_IMPL.get(bucket, object_key)
     if not data:
@@ -488,21 +519,19 @@ def get_asset(user_id: str, img_id: str) -> tuple[bytes, str]:
 
 
 def list_models(user_id: str, types: list[str] | None) -> list[dict]:
-    tenant_ids = joined_tenant_ids(user_id)
-    query = TenantModel.select().where(TenantModel.tenant_id.in_(tenant_ids), TenantModel.status == "active")
     models = []
-    for model in query:
+    for provider, model in _available_models(user_id):
         model_types = _model_types(model.model_type)
         if types and not set(model_types) & set(types):
             continue
         models.append(
             {
                 "model_id": model.id,
-                "tenant_id": model.tenant_id,
+                "tenant_id": provider.tenant_id,
                 "type": model_types,
-                "factory": model.llm_factory,
-                "name": model.llm_name,
-                "max_tokens": model.max_tokens,
+                "factory": provider.provider_name,
+                "name": model.model_name,
+                "max_tokens": (json.loads(model.extra or "{}").get("max_tokens") or 8192),
                 "capabilities": {
                     "vision": LLMType.VISION.value in model_types,
                     "image_embedding": False,
@@ -511,6 +540,17 @@ def list_models(user_id: str, types: list[str] | None) -> list[dict]:
             }
         )
     return models
+
+
+def _available_models(user_id: str):
+    for tenant_id in joined_tenant_ids(user_id):
+        for provider in TenantModelProviderService.get_by_tenant_id(tenant_id):
+            for instance in TenantModelInstanceService.get_all_by_provider_id(provider.id):
+                if instance.status != "active":
+                    continue
+                for model in TenantModelService.get_models_by_instance_id(instance.id):
+                    if model.status == "active" and model.provider_id == provider.id:
+                        yield provider, model
 
 
 async def invoke_model(user_id: str, model_id: str, op: str, inputs: dict, gen_conf: dict | None) -> dict:
@@ -602,11 +642,15 @@ def _model_tenant(user_id: str, model_id: str, model_type: str) -> str:
     model_obj = TenantModel.get_or_none(TenantModel.id == model_id)
     if model_obj is None:
         raise GatewayError(RetCode.NOT_FOUND, f"Model {model_id} not found.")
-    if model_obj.tenant_id not in joined_tenant_ids(user_id):
+    ok, provider = TenantModelProviderService.get_by_id(model_obj.provider_id)
+    if not ok or provider.tenant_id not in joined_tenant_ids(user_id):
         raise GatewayError(RetCode.PERMISSION_ERROR, f"Model {model_id} is not available.")
+    ok, instance = TenantModelInstanceService.get_by_id(model_obj.instance_id)
+    if not ok or instance.provider_id != provider.id or instance.status != "active" or model_obj.status != "active":
+        raise GatewayError(RetCode.PERMISSION_ERROR, f"Model {model_id} is not active.")
     if not (model_obj.model_type & _type_bit(model_type)):
         raise GatewayError(RetCode.ARGUMENT_ERROR, f"Model {model_id} does not support {model_type}.")
-    return model_obj.tenant_id
+    return provider.tenant_id
 
 
 def _type_bit(model_type: str) -> int:
@@ -663,12 +707,12 @@ def _knn_hits(dealer, res) -> list[tuple[str, float]]:
     the pagerank feature. Both shapes are sorted by score descending.
     """
     scores: list[tuple[str, float]] = []
-    if hasattr(dealer.dataStore, "get_scores") and isinstance(res, dict):
+    if hasattr(dealer.dataStore, "get_scores"):
         scores = [(chunk_id, float(score)) for chunk_id, score in dealer.dataStore.get_scores(res).items()]
     if not scores:
         frame = res[0] if isinstance(res, tuple) else res
         if hasattr(frame, "columns") and "id" in frame.columns and "_score" in frame.columns:
-            scores = [(str(row.id), float(row._score or 0.0)) for row in frame.itertuples(index=False)]
+            scores = [(str(identifier), float(score or 0.0)) for identifier, score in zip(frame["id"], frame["_score"], strict=True)]
     scores.sort(key=lambda item: item[1], reverse=True)
     return scores
 

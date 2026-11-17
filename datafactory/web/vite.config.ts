@@ -8,8 +8,6 @@ export default defineConfig({
     port: 9391,
     proxy: {
       "/api/factory": "http://127.0.0.1:9390",
-      "/api/v1": "http://127.0.0.1:9380",
-      "/v1": "http://127.0.0.1:9380",
     },
   },
 });

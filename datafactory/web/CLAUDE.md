@@ -21,7 +21,7 @@ DataFactory 平台的前端，与 RAGFlow 同源部署在 `/factory/`。产品�
 
 ```bash
 npm ci
-npm run dev           # Vite 运行于 :9391，base 为 /factory/，/api/factory 代理到 :9390，/api/v1 代理到 RAGFlow 9380
+npm run dev           # Vite 运行于 :9391，base 为 /factory/，/api/factory 代理到 :9390
 npm run gen:api       # openapi-typescript openapi.json -> src/api/schema.d.ts
 npm run lint
 npm run type-check
@@ -66,7 +66,7 @@ src/
 
 ## 数据请求
 
-- `src/api/client.ts` 中只有一个 HTTP 客户端（openapi-fetch）：从 `localStorage` 读取 RAGFlow 登录令牌附加到 `Authorization`，为创建类请求添加 `Idempotency-Key`，将 `DFError` 错误码映射为类型化错误，401 时跳转 `/factory/login`。其他模块不得直接调用 `fetch`/axios。
+- `src/api/client.ts` 使用一个 openapi-fetch 客户端。平台请求使用 HttpOnly Cookie，只有 `/me` 可读取同源 RAGFlow `Authorization` 作为首次建立会话的凭证。创建类请求添加 `Idempotency-Key`。`/me` 的 401 由登录守卫处理，`POST /session` 的 401 由登录表单处理，其余 401 由客户端跳转 `/factory/login`。
 - Hook 放在各 feature 的 `api.ts` 中。每个 feature 定义查询键工厂 `{Feature}Keys`，返回 `as const` 元组；所有 `useQuery` 与 `invalidateQueries` 都引用它。不写内联键数组。
 - 查询在渲染其数据的组件中发起，而不是在父页面中。互斥视图拆成独立组件，而不是层层传递 `enabled` 标志。
 - 长任务（快照构建、预览、运行、导出）使用 `api/sse.ts` 的 SSE 流；SSE 事件通过 `setQueryData` 或失效刷新更新 Query 缓存。已有 SSE 主题时不要轮询。
@@ -119,7 +119,7 @@ src/
 ## 与 RAGFlow 的集成
 
 - RAGFlow 前端唯一的改动是在导航中增加一个指向 `/factory/` 的入口；该改动属于 RAGFlow 的 `web/`，遵循那里的 `web/CLAUDE.md`。
-- 登录复用 RAGFlow 存在 `localStorage` 中的令牌（同源）。当前 Python 服务登录端点为 `POST /v1/user/login`，`/factory/login` 页面经客户端调用该入口并保存 `Authorization`；随后通过 DataFactory `/me` 换取有期限的 HttpOnly 会话。不要复制 RAGFlow 的源文件。
+- `/factory/login` 经 DataFactory `POST /api/factory/v1/session` 校验 RAGFlow 账号，获得平台自己的 HttpOnly 会话。有效平台 Cookie 优先于 RAGFlow 令牌。DataFactory 只读取 `Authorization` 用于同源首次会话建立，令牌由 RAGFlow 自己管理。
 - 不直接调用 RAGFlow API 获取业务数据；RAGFlow 的知识库、文档和模型通过 `/api/factory/v1/ragflow/*` 读取。
 
 ## 审阅清单

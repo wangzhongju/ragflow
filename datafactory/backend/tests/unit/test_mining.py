@@ -85,6 +85,23 @@ def test_the_same_group_always_lands_in_the_same_split():
     assert first[0]["split"] == second[0]["split"]
 
 
+def test_transitive_shared_positive_and_query_links_do_not_leak():
+    rows = [
+        {"row_key": "a", "group_key": "f1", "positives": ["p1"], "query": "alpha beta gamma delta epsilon"},
+        {"row_key": "b", "group_key": "f2", "positives": ["p1", "p2"], "query": "unrelated"},
+        {"row_key": "c", "group_key": "f3", "positives": ["p3"], "query": "alpha beta gamma delta epsilon zeta"},
+        {"row_key": "d", "group_key": "f4", "positives": ["p2"], "query": "different"},
+    ]
+    assigned = split_rows(rows, {"train": 0.8, "test": 0.2}, 42)
+    reverse = split_rows(list(reversed(rows)), {"train": 0.8, "test": 0.2}, 42)
+    assert len({row["split"] for row in assigned}) == 1
+    assert {row["row_key"]: row["split_group"] for row in assigned} == {
+        row["row_key"]: row["split_group"] for row in reverse
+    }
+    assigned[-1]["split"] = "test" if assigned[0]["split"] == "train" else "train"
+    assert not next(gate for gate in check_gates(assigned, "ready") if gate.name == "cross_split_leakage").passed
+
+
 def _sample(**extra) -> dict:
     base = {
         "split": "train",

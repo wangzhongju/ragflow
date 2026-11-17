@@ -10,6 +10,7 @@ import math
 from dataclasses import dataclass, field
 
 from datafactory.domain.fingerprint import jaccard, normalize
+from datafactory.engine.splits import components
 
 _NEAR = 0.8
 
@@ -125,12 +126,12 @@ def _strategy(strategy, pool, positive_score, rank_range, max_ratio, margin, tea
 
 
 def split_rows(rows: list[dict], ratios: dict[str, float], seed: int) -> list[dict]:
-    """Assign each row a split from its group key, so a group never breaks apart.
-
-    The group key is the document family. Rows sharing a family land in the same
-    split, which is what keeps a document out of both train and test.
-    """
-    if not ratios or any(value < 0 for value in ratios.values()) or abs(sum(ratios.values()) - 1) > 1e-9:
+    """Hash connected components so linked families and queries stay together."""
+    if (
+        not ratios
+        or any(not math.isfinite(value) or value < 0 for value in ratios.values())
+        or abs(sum(ratios.values()) - 1) > 1e-9
+    ):
         raise ValueError("Split ratios must be nonnegative and sum to one.")
     names = sorted(ratios)
     bounds = []
@@ -139,14 +140,14 @@ def split_rows(rows: list[dict], ratios: dict[str, float], seed: int) -> list[di
         covered += ratios[name]
         bounds.append((covered, name))
     assigned = []
-    for row in rows:
-        point = _point(row["group_key"], seed)
+    for row, component in zip(rows, components(rows), strict=True):
+        point = _point(component, seed)
         split = names[-1]
         for bound, name in bounds:
-            if point <= bound:
+            if point < bound:
                 split = name
                 break
-        assigned.append({**row, "split": split})
+        assigned.append({**row, "split": split, "split_group": component})
     return assigned
 
 
@@ -184,15 +185,12 @@ def check_gates(samples: list[dict], snapshot_status: str, min_negatives: int = 
 def _leakage(samples: list[dict]) -> GateResult:
     seen: dict[str, str] = {}
     leaked = 0
-    for sample in samples:
-        for positive in sample.get("positives", []):
-            earlier = seen.get(positive)
-            if earlier and earlier != sample["split"]:
-                leaked += 1
-            seen.setdefault(positive, sample["split"])
-    return GateResult(
-        "cross_split_leakage", "blocker", leaked == 0, f"{leaked} positives appear in more than one split."
-    )
+    for sample, component in zip(samples, components(samples), strict=True):
+        earlier = seen.get(component)
+        if earlier and earlier != sample["split"]:
+            leaked += 1
+        seen.setdefault(component, sample["split"])
+    return GateResult("cross_split_leakage", "blocker", leaked == 0, f"{leaked} linked samples cross split boundaries.")
 
 
 def _counts(samples: list[dict], min_negatives: int) -> GateResult:

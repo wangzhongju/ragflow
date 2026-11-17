@@ -1,0 +1,34 @@
+{
+  "name": "文本检索：生成、召回、教师评分与负例",
+  "config": {
+    "task_type": "retrieval",
+    "seed": {"type": "ragflow_snapshot", "snapshot_id": "SNAPSHOT_ID", "unit": "segment"},
+    "models": {
+      "generator": {"model_id": "CHAT_MODEL_ID", "gen_conf": {"temperature": 0, "max_tokens": 1024}},
+      "teacher": {"model_id": "RERANK_MODEL_ID"}
+    },
+    "columns": [
+      {
+        "name": "qa", "type": "llm_structured", "model": "generator", "on_error": "fail_run",
+        "system_prompt": "Return only a JSON object. Do not include explanations or reasoning.",
+        "prompt": "Create one concise, specific question answerable from the passage. Do not mention the passage or ask for information absent from it. Return {\"question\":\"...\",\"positives\":[\"{{ seed.id }}\"]}. Preserve that exact positive ID. Passage:\n{{ seed.parts | render_parts }}\n/no_think",
+        "output_schema": {"type": "object", "required": ["question", "positives"], "properties": {"question": {"type": "string", "minLength": 1}, "positives": {"type": "array", "minItems": 1, "maxItems": 1, "items": {"type": "string"}}}, "additionalProperties": false}
+      },
+      {"name": "candidates", "type": "retrieval", "params": {"query": "qa", "top_k": 70, "min_score": 0}, "on_error": "fail_run"},
+      {"name": "teacher_scores", "type": "rerank_score", "model": "teacher", "params": {"query": "qa.question", "targets": ["qa.positives", "candidates"]}, "on_error": "fail_run"},
+      {"name": "negatives", "type": "processor", "params": {"kind": "hard_negative_select", "positives": "qa.positives", "scores": "teacher_scores", "candidates": "candidates", "n": 1, "strategy": "topk_percpos"}},
+      {
+        "name": "judge", "type": "llm_judge", "model": "generator", "on_error": "fail_run",
+        "system_prompt": "Evaluate the question honestly. Return only JSON with overall (an integer from 0 to 10) and reason. 9-10: precise, self-contained, fully supported; 7-8: supported with a minor issue; 4-6: vague or partly unsupported; 0-3: unsupported or incoherent. Do not inflate scores.",
+        "prompt": "Question: {{ qa.question }}\nSource passage: {{ seed.parts | render_parts }}\n/no_think",
+        "output_schema": {"type": "object", "required": ["overall", "reason"], "properties": {"overall": {"type": "integer", "minimum": 0, "maximum": 10}, "reason": {"type": "string"}}, "additionalProperties": false}
+      }
+    ],
+    "processors": [
+      {"kind": "filter", "expr": "judge.overall >= 7 and negatives | length >= 1 and false_negative_suspects | length == 0"},
+      {"kind": "split", "ratios": {"train": 0.8, "val": 0.1, "test": 0.1}, "seed": 17}
+    ],
+    "budget": {"max_invocations": 12, "max_tokens": 120000, "on_exceed": "pause"},
+    "run": {"seed": 17, "batch_size": 1}
+  }
+}

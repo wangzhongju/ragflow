@@ -17,6 +17,21 @@ class Base(DeclarativeBase):
     """Base for every table."""
 
 
+class AuditRow(Base):
+    """Append-only records of accountable production decisions."""
+
+    __tablename__ = "audit"
+    id: Mapped[str] = mapped_column(String(40), primary_key=True)
+    project_id: Mapped[str] = mapped_column(String(40), index=True)
+    actor_id: Mapped[str] = mapped_column(String(64))
+    target_id: Mapped[str] = mapped_column(String(40))
+    action: Mapped[str] = mapped_column(String(64))
+    before: Mapped[dict] = mapped_column(JSON)
+    after: Mapped[dict] = mapped_column(JSON)
+    reason: Mapped[str] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+
+
 class ProjectRow(Base):
     """One data-production project."""
 
@@ -117,6 +132,14 @@ class AssetRow(Base):
     mime: Mapped[str] = mapped_column(String(120))
     size: Mapped[int] = mapped_column(Integer)
     storage_uri: Mapped[str] = mapped_column(Text)
+
+
+class SnapshotAssetRow(Base):
+    """Asset reachability from a frozen snapshot, used for access control."""
+
+    __tablename__ = "snapshot_asset"
+    asset_id: Mapped[str] = mapped_column(String(80), primary_key=True)
+    snapshot_id: Mapped[str] = mapped_column(String(40), primary_key=True)
 
 
 class RecipeRow(Base):
@@ -262,3 +285,4 @@ class ReleaseRow(Base):
     sample_count: Mapped[int] = mapped_column(Integer)
     gates: Mapped[list] = mapped_column(JSON)
     samples: Mapped[list] = mapped_column(JSON)
+    manifest: Mapped[dict] = mapped_column(JSON, default=dict)

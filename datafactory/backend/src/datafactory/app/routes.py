@@ -5,16 +5,16 @@ business rules.
 """
 
 from fastapi import APIRouter, Depends, Query, Request, Response
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, SecretStr
 
-from datafactory.app.auth import SESSION_TTL, current_user, read_cookie, session_cookie
+from datafactory.app.auth import SESSION_TTL, current_user, session_cookie
 from datafactory.core.errors import Forbidden, GatewayUnavailable, Unauthorized
 from datafactory.core.settings import GatewaySettings, Settings
 from datafactory.corpus.snapshot import SnapshotBuilder, drifted_documents
 from datafactory.domain.content import HealthReport, Segment
 from datafactory.engine.recipes import RecipeRecord, RecipeRepository, RecipeSummary
 from datafactory.gateway.client import GatewayClient
-from datafactory.gateway.dto import Dataset, DocumentPage, Model
+from datafactory.gateway.dto import Dataset, DocumentPage, Model, Session
 from datafactory.pipeline.service import (
     DatasetRecord,
     OverviewRecord,
@@ -29,6 +29,16 @@ from datafactory.store.snapshots import SnapshotRepository
 
 router = APIRouter()
 
+
+@router.get("/assets/{asset_id}")
+async def asset_download(asset_id: str, request: Request, user_id: str = Depends(current_user)) -> Response:
+    from datafactory.app.assets import asset_response
+    from datafactory.store.assets import read_asset
+
+    data, mime = await read_asset(request.state.session, request.app.state.objects, asset_id, user_id)
+    return asset_response(data, mime, asset_id, request.headers)
+
+
 # The gateway reports refusal with its own code, which is not the HTTP status.
 _GATEWAY_FORBIDDEN = 108
 
@@ -40,6 +50,11 @@ class Me(BaseModel):
     tenant_ids: list[str]
     nickname: str
     lang: str
+
+
+class LoginIn(BaseModel):
+    email: str = Field(min_length=1, max_length=255)
+    password: SecretStr = Field(min_length=1, max_length=4096, description="RSA-encrypted RAGFlow password.")
 
 
 class ProjectIn(BaseModel):
@@ -105,21 +120,9 @@ def _project_out(project) -> ProjectOut:
     )
 
 
-@router.get("/me", response_model=Me)
-async def me(request: Request, response: Response) -> Me:
-    """Resolve the browser's RAGFlow login into a platform session.
-
-    A valid RAGFlow token is exchanged once. Later calls send the platform
-    cookie instead of the RAGFlow token, so workers never need it.
-    """
-    authorization = request.headers.get("authorization", "")
-    if not authorization:
-        user_id = read_cookie(request, request.app.state.settings.session_secret)
-        if not user_id:
-            raise Unauthorized("Sign in through RAGFlow first.")
-        return Me(user_id=user_id, tenant_ids=[], nickname="", lang="")
-    session = await _gateway(request, "").session_from_token(authorization)
+def _issue_session(request: Request, response: Response, session: Session) -> Me:
     name, value = session_cookie(session.user_id, request.app.state.settings.session_secret)
+    response.headers["Cache-Control"] = "no-store"
     response.set_cookie(
         name,
         value,
@@ -130,6 +133,27 @@ async def me(request: Request, response: Response) -> Me:
         secure=request.url.scheme == "https",
     )
     return Me(user_id=session.user_id, tenant_ids=session.tenant_ids, nickname=session.nickname, lang=session.lang)
+
+
+@router.post("/session", response_model=Me)
+async def sign_in(body: LoginIn, request: Request, response: Response) -> Me:
+    """Start a DataFactory session with RAGFlow account credentials."""
+    session = await _gateway(request, "").session_from_password(body.email, body.password.get_secret_value())
+    return _issue_session(request, response, session)
+
+
+@router.get("/me", response_model=Me)
+async def me(request: Request, response: Response) -> Me:
+    """Read the platform session or bootstrap it with an existing RAGFlow login."""
+    user_id = request.scope.get("df_user_id", "")
+    if user_id:
+        response.headers["Cache-Control"] = "no-store"
+        return Me(user_id=user_id, tenant_ids=[], nickname="", lang="")
+    authorization = request.headers.get("authorization", "")
+    if not authorization:
+        raise Unauthorized("Sign in to DataFactory first.")
+    session = await _gateway(request, "").session_from_token(authorization)
+    return _issue_session(request, response, session)
 
 
 @router.post("/projects", response_model=ProjectOut, status_code=201)
@@ -369,6 +393,46 @@ class PreviewIn(BaseModel):
     limit: int = Field(default=10, ge=1, le=50)
 
 
+class ReleaseIn(BaseModel):
+    warning_reason: str = Field(default="", max_length=2000)
+
+
+class BudgetIn(BaseModel):
+    max_tokens: int = Field(ge=1, lt=2**31)
+    max_invocations: int = Field(ge=1, lt=2**31)
+    reason: str = Field(min_length=1, max_length=2000)
+
+
+class ReconcileIn(BaseModel):
+    actual_tokens: int = Field(ge=0, lt=2**31)
+    reason: str = Field(min_length=1, max_length=2000)
+
+
+@router.put("/projects/{project_id}/runs/{run_id}/budget", response_model=RunRecord)
+async def adjust_run_budget(
+    project_id: str, run_id: str, body: BudgetIn, request: Request, user_id: str = Depends(current_user)
+) -> RunRecord:
+    from datafactory.engine.accounts import adjust_budget
+
+    await adjust_budget(request.state.session, project_id, run_id, user_id, **body.model_dump())
+    return await _production(request, user_id).get_run(project_id, run_id, user_id)
+
+
+@router.post("/projects/{project_id}/runs/{run_id}/invocations/{invocation_id}:reconcile", response_model=RunRecord)
+async def reconcile_invocation(
+    project_id: str,
+    run_id: str,
+    invocation_id: str,
+    body: ReconcileIn,
+    request: Request,
+    user_id: str = Depends(current_user),
+) -> RunRecord:
+    from datafactory.engine.accounts import reconcile
+
+    await reconcile(request.state.session, project_id, run_id, invocation_id, user_id, **body.model_dump())
+    return await _production(request, user_id).get_run(project_id, run_id, user_id)
+
+
 class ReviewIn(BaseModel):
     """A human decision."""
 
@@ -539,10 +603,16 @@ async def review_sample(
 
 @router.post("/projects/{project_id}/datasets/{dataset_id}/releases", response_model=ReleaseRecord, status_code=201)
 async def create_release(
-    project_id: str, dataset_id: str, request: Request, user_id: str = Depends(current_user)
+    project_id: str,
+    dataset_id: str,
+    request: Request,
+    body: ReleaseIn | None = None,
+    user_id: str = Depends(current_user),
 ) -> ReleaseRecord:
     """Freeze the approved samples. Blockers leave the release blocked."""
-    return await _production(request, user_id).release(project_id, dataset_id, user_id)
+    return await _production(request, user_id).release(
+        project_id, dataset_id, user_id, body.warning_reason if body else ""
+    )
 
 
 @router.get("/projects/{project_id}/releases", response_model=list[ReleaseRecord])
@@ -565,3 +635,19 @@ async def get_release(
 ) -> ReleaseRecord:
     """One release with its gate results."""
     return await _production(request, user_id).get_release(project_id, release_id, user_id)
+
+
+@router.get("/projects/{project_id}/releases/{release_id}/package")
+async def download_release(
+    project_id: str, release_id: str, request: Request, adapter: str = "canonical", user_id: str = Depends(current_user)
+) -> Response:
+    data = await _production(request, user_id).export_package(project_id, release_id, user_id, adapter)
+    return Response(
+        data,
+        media_type="application/zip",
+        headers={
+            "Content-Disposition": f'attachment; filename="{release_id}-{adapter}.zip"',
+            "Cache-Control": "private, no-store",
+            "X-Content-Type-Options": "nosniff",
+        },
+    )

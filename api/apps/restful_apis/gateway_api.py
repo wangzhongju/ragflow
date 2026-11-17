@@ -17,14 +17,15 @@
 
 The blueprint is registered automatically because this module lives in
 ``restful_apis``. Every route is read-only apart from model invocation, which
-only reads credentials and reports usage.
+only reads credentials and reports usage. Password verification does not issue
+or update RAGFlow login tokens.
 
 Authentication is two layers: the ``X-DF-Service-Key`` header must match
 ``DATAFACTORY_SERVICE_KEY`` (the whole blueprint answers 404 when that variable
 is unset, so an unconfigured deployment exposes nothing), and ``X-DF-User-Id``
-names the user the call acts for. ``GET /session`` is the exception: the
-platform uses it to resolve a logged-in browser user, so it takes the user's
-own ``Authorization`` JWT instead.
+names the user the call acts for. ``GET /session`` takes the browser's RAGFlow
+JWT instead. ``POST /session`` requires the service key and derives the user
+identity from the submitted credentials.
 """
 
 import asyncio
@@ -42,6 +43,7 @@ from api.utils.api_utils import get_json_result
 from common.constants import RetCode
 
 page_name = "gateway"
+_logger = logging.getLogger(__name__)
 
 _inflight = 0
 _inflight_lock = asyncio.Lock()
@@ -83,9 +85,9 @@ async def _guard():
 
 def _fail(exc: Exception):
     if isinstance(exc, gw.GatewayError):
-        logging.warning("gateway: %s", exc.message)
+        _logger.warning("gateway: %s", exc.message)
         return get_json_result(code=exc.code, message=exc.message), _http_status(exc.code)
-    logging.exception("gateway request failed")
+    _logger.exception("gateway request failed")
     return get_json_result(code=RetCode.EXCEPTION_ERROR, message="Gateway request failed."), 500
 
 
@@ -95,6 +97,7 @@ def _http_status(code: int) -> int:
         RetCode.DATA_ERROR: 400,
         RetCode.PERMISSION_ERROR: 403,
         RetCode.AUTHENTICATION_ERROR: 403,
+        RetCode.UNAUTHORIZED: 401,
         RetCode.NOT_FOUND: 404,
     }.get(code, 200)
 
@@ -108,12 +111,7 @@ async def _body() -> dict:
     return data
 
 
-@manager.route("/session", methods=["GET"])
-@login_required(auth_types=[AUTH_JWT])
-async def session():
-    if not gw.gateway_enabled():
-        return _disabled()
-    user = g.user
+def _session_response(user):
     data = {
         "user_id": user.id,
         "tenant_ids": gw.joined_tenant_ids(user.id),
@@ -123,7 +121,31 @@ async def session():
     return _versioned(get_json_result(data=data))
 
 
-@manager.route("/datasets", methods=["GET"])
+@manager.route("/session", methods=["GET"])  # noqa: F821
+@login_required(auth_types=[AUTH_JWT])
+async def session():
+    if not gw.gateway_enabled():
+        return _disabled()
+    return _session_response(g.user)
+
+
+@manager.route("/session", methods=["POST"])  # noqa: F821
+async def password_session():
+    blocked = await _guard()
+    if blocked:
+        return blocked
+    try:
+        body = await _body()
+        email, password = body.get("email"), body.get("password")
+        if not isinstance(email, str) or not email or not isinstance(password, str) or not password:
+            raise gw.GatewayError(RetCode.ARGUMENT_ERROR, "Email and encrypted password are required.")
+        user = await asyncio.to_thread(gw.authenticate_user, email, password)
+        return _session_response(user)
+    except gw.GatewayError as exc:
+        return _fail(exc)
+
+
+@manager.route("/datasets", methods=["GET"])  # noqa: F821
 async def datasets():
     blocked = await _guard()
     if blocked:
@@ -134,7 +156,7 @@ async def datasets():
         return _fail(exc)
 
 
-@manager.route("/documents:list", methods=["POST"])
+@manager.route("/documents:list", methods=["POST"])  # noqa: F821
 async def documents_list():
     blocked = await _guard()
     if blocked:
@@ -151,7 +173,7 @@ async def documents_list():
         return _fail(exc)
 
 
-@manager.route("/chunks:scan", methods=["POST"])
+@manager.route("/chunks:scan", methods=["POST"])  # noqa: F821
 async def chunks_scan():
     """Stream every chunk of the requested documents as NDJSON.
 
@@ -209,7 +231,7 @@ def _kb(kb_id: str):
     return kb
 
 
-@manager.route("/chunks:vectors", methods=["POST"])
+@manager.route("/chunks:vectors", methods=["POST"])  # noqa: F821
 async def chunks_vectors():
     blocked = await _guard()
     if blocked:
@@ -221,7 +243,7 @@ async def chunks_vectors():
         return _fail(exc)
 
 
-@manager.route("/search:dense", methods=["POST"])
+@manager.route("/search:dense", methods=["POST"])  # noqa: F821
 async def search_dense():
     blocked = await _guard()
     if blocked:
@@ -241,7 +263,7 @@ async def search_dense():
         return _fail(exc)
 
 
-@manager.route("/search:production", methods=["POST"])
+@manager.route("/search:production", methods=["POST"])  # noqa: F821
 async def search_production():
     blocked = await _guard()
     if blocked:
@@ -262,7 +284,7 @@ async def search_production():
         return _fail(exc)
 
 
-@manager.route("/assets/<img_id>", methods=["GET"])
+@manager.route("/assets/<img_id>", methods=["GET"])  # noqa: F821
 async def asset(img_id: str):
     blocked = await _guard()
     if blocked:
@@ -277,7 +299,7 @@ async def asset(img_id: str):
     return response
 
 
-@manager.route("/models", methods=["GET"])
+@manager.route("/models", methods=["GET"])  # noqa: F821
 async def models():
     blocked = await _guard()
     if blocked:
@@ -289,7 +311,7 @@ async def models():
         return _fail(exc)
 
 
-@manager.route("/models:invoke", methods=["POST"])
+@manager.route("/models:invoke", methods=["POST"])  # noqa: F821
 async def models_invoke():
     blocked = await _guard()
     if blocked:

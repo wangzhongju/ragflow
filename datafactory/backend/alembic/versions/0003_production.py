@@ -62,7 +62,7 @@ def upgrade() -> None:
         sa.Column("sample_id", sa.String(40), nullable=False),
         sa.Column("reviewer_id", sa.String(64), nullable=False),
         sa.Column("decision", sa.String(16), nullable=False),
-        sa.Column("reason", sa.Text, nullable=False, server_default=""),
+        sa.Column("reason", sa.Text, nullable=False, server_default=sa.text("('')")),
     )
     op.create_table(
         "release",

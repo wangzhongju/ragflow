@@ -1,9 +1,8 @@
 """Who the current request acts as.
 
-The browser signs in through RAGFlow. The platform resolves that login once,
-through the gateway's ``GET /session``, and keeps the resulting user id in a
-signed cookie of its own. Workers never see the cookie: they call the gateway
-with the service key and the user id stored on the run.
+The platform verifies credentials or an existing RAGFlow token through the
+gateway and keeps the resulting user id in its own signed cookie. Workers
+call the gateway with the service key and the user id stored on the run.
 """
 
 import hashlib
@@ -22,7 +21,7 @@ def current_user(request: Request) -> str:
     """The user id for this request, or 401 when there is no session."""
     user_id = request.scope.get("df_user_id", "")
     if not user_id:
-        raise Unauthorized("Sign in through RAGFlow first.")
+        raise Unauthorized("Sign in to DataFactory first.")
     return user_id
 
 

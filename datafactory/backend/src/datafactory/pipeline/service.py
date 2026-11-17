@@ -6,7 +6,11 @@ records a human decision over a sample. Release freezes the samples that pass th
 gates.
 """
 
-from pydantic import BaseModel
+import asyncio
+from collections import Counter
+from datetime import UTC, datetime
+
+from pydantic import BaseModel, Field
 from sqlalchemy import func, select, update
 from sqlalchemy.exc import IntegrityError
 
@@ -19,10 +23,12 @@ from datafactory.engine.model_client import ModelClient
 from datafactory.engine.recipe import Recipe
 from datafactory.engine.recipes import RecipeRepository
 from datafactory.pipeline.run import produce, release_check
+from datafactory.release.package import build_archive, fingerprint, json_bytes
 from datafactory.store.projects import ProjectRepository
 from datafactory.store.runs import RunStore
 from datafactory.store.snapshots import SnapshotRepository
 from datafactory.store.tables import (
+    AuditRow,
     DatasetRow,
     IdempotencyRow,
     InvocationRow,
@@ -138,6 +144,7 @@ class ReleaseRecord(BaseModel):
     status: str
     sample_count: int
     gates: list[GateRecord]
+    manifest: dict = Field(default_factory=dict)
 
 
 class ProductionService:
@@ -511,10 +518,14 @@ class ProductionService:
             "releases": released or 0,
         }
 
-    async def release(self, project_id: str, dataset_id: str, user_id: str) -> ReleaseRecord:
+    async def release(self, project_id: str, dataset_id: str, user_id: str, warning_reason: str = "") -> ReleaseRecord:
         await ProjectRepository(self._session).require_role(project_id, user_id, "editor")
         dataset = await self._dataset(project_id, dataset_id)
-        rows = (await self._session.scalars(select(SampleRow).where(SampleRow.dataset_id == dataset.id))).all()
+        rows = (
+            await self._session.scalars(
+                select(SampleRow).where(SampleRow.dataset_id == dataset.id).order_by(SampleRow.id).with_for_update()
+            )
+        ).all()
         approved = [row.body for row in rows if row.review_status == "approved"]
         if not approved:
             raise Conflict("A release needs at least one approved sample.", code="nothing_approved")
@@ -522,15 +533,70 @@ class ProductionService:
         snapshot = await SnapshotRepository(self._session).require_project(run.snapshot_id, project_id)
         gates = release_check(approved, snapshot.status)
         blocked = [gate for gate in gates if gate["level"] == "blocker" and not gate["passed"]]
+        warnings = [gate for gate in gates if gate["level"] == "warning" and not gate["passed"]]
+        if warnings and not blocked and not warning_reason.strip():
+            raise Conflict("Acknowledge failed warnings with a reason before releasing.", code="warning_ack_required")
+        version = await self._session.get(RecipeVersionRow, run.recipe_version_id)
+        if version is None:
+            raise Conflict("The run has no frozen recipe version.", code="release_incomplete")
+        documents = await SnapshotRepository(self._session).documents(run.snapshot_id)
+        calls = list(
+            await self._session.scalars(
+                select(InvocationRow).where(InvocationRow.run_id == run.id).order_by(InvocationRow.id)
+            )
+        )
+        release_id = new_id("release")
+        manifest = {
+            "schema_version": 1,
+            "release_id": release_id,
+            "dataset_id": dataset_id,
+            "snapshot_id": run.snapshot_id,
+            "run_id": run.id,
+            "recipe_version_id": version.id,
+            "recipe_hash": fingerprint(version.config),
+            "recipe": version.config,
+            "created_at": datetime.now(UTC).isoformat(),
+            "created_by": user_id,
+            "sample_count": len(approved),
+            "samples_hash": fingerprint(approved),
+            "split_counts": dict(Counter(item.get("split", "") for item in approved)),
+            "modality_counts": dict(Counter(item.get("modality", "") for item in approved)),
+            "documents": [document.model_dump() for document in sorted(documents, key=lambda item: item.id)],
+            "invocations": [
+                {
+                    "id": call.id,
+                    "model_fingerprint": call.model_fingerprint,
+                    "request_digest": call.request_digest,
+                    "status": call.status,
+                }
+                for call in calls
+            ],
+            "gates": gates,
+            "warning_reason": warning_reason.strip(),
+            "approved_sample_ids": [row.id for row in rows if row.review_status == "approved"],
+        }
         record = ReleaseRow(
-            id=new_id("release"),
+            id=release_id,
             dataset_id=dataset.id,
             status="blocked" if blocked else "released",
             sample_count=len(approved),
             gates=gates,
             samples=approved,
+            manifest=manifest,
         )
         self._session.add(record)
+        self._session.add(
+            AuditRow(
+                id=new_id("audit"),
+                project_id=project_id,
+                actor_id=user_id,
+                target_id=release_id,
+                action="release_created",
+                before={},
+                after={"status": record.status, "samples_hash": manifest["samples_hash"]},
+                reason=warning_reason.strip(),
+            )
+        )
         await self._session.commit()
         return ReleaseRecord(
             id=record.id,
@@ -538,6 +604,7 @@ class ProductionService:
             status=record.status,
             sample_count=record.sample_count,
             gates=[GateRecord.model_validate(gate) for gate in gates],
+            manifest=manifest,
         )
 
     async def list_releases(self, project_id: str, user_id: str) -> list[ReleaseRecord]:
@@ -548,7 +615,12 @@ class ProductionService:
         rows = (await self._session.scalars(select(ReleaseRow).where(ReleaseRow.dataset_id.in_(datasets)))).all()
         return [
             ReleaseRecord(
-                id=row.id, dataset_id=row.dataset_id, status=row.status, sample_count=row.sample_count, gates=row.gates
+                id=row.id,
+                dataset_id=row.dataset_id,
+                status=row.status,
+                sample_count=row.sample_count,
+                gates=row.gates,
+                manifest=row.manifest,
             )
             for row in rows
         ]
@@ -629,8 +701,41 @@ class ProductionService:
             raise NotFound(f"No release {release_id}.", code="release_not_found")
         await self._dataset(project_id, row.dataset_id)
         return ReleaseRecord(
-            id=row.id, dataset_id=row.dataset_id, status=row.status, sample_count=row.sample_count, gates=row.gates
+            id=row.id,
+            dataset_id=row.dataset_id,
+            status=row.status,
+            sample_count=row.sample_count,
+            gates=row.gates,
+            manifest=row.manifest,
         )
+
+    async def export_package(self, project_id: str, release_id: str, user_id: str, adapter: str) -> bytes:
+        rendered = await self.export(project_id, release_id, user_id, adapter)
+        release = await self._session.get(ReleaseRow, release_id)
+        if release is None or not release.manifest:
+            raise Conflict(
+                "Create a release with frozen provenance before downloading a package.", code="manifest_missing"
+            )
+        if fingerprint(release.samples) != release.manifest["samples_hash"]:
+            raise Conflict("Release content does not match its frozen hash.", code="release_corrupt")
+        repository = SnapshotRepository(self._session)
+        segments = []
+        cursor = None
+        while True:
+            page = await repository.segments(release.manifest["snapshot_id"], limit=1000, after_id=cursor)
+            segments.extend(page)
+            if len(page) < 1000:
+                break
+            cursor = page[-1].id
+        files = {f"data/{name}": content.encode() for name, content in rendered["files"].items()}
+        files["release/samples.jsonl"] = b"".join(json_bytes(item) for item in release.samples)
+        files["release/corpus.jsonl"] = b"".join(json_bytes(segment.model_dump()) for segment in segments)
+        from datafactory.store.assets import read_asset
+
+        for asset_id in sorted({part.asset_id for segment in segments for part in segment.parts if part.asset_id}):
+            data, _ = await read_asset(self._session, self._objects, asset_id, user_id)
+            files[f"assets/{asset_id.removeprefix('sha256:')}"] = data
+        return await asyncio.to_thread(build_archive, release.manifest, adapter, files)
 
     async def _recipe(self, project_id: str, recipe_id: str) -> RecipeRow:
         row = await self._session.get(RecipeRow, recipe_id)

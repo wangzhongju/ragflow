@@ -1,8 +1,9 @@
-import { api } from "./api/client";
+import { api, ApiError } from "./api/client";
 import { Providers } from "./app/providers";
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import {
+  Navigate,
   RouterProvider,
   createBrowserRouter,
   redirect,
@@ -13,7 +14,6 @@ import {
   Overview,
   ProjectLayout,
   Projects,
-  Releases,
   ReviewDesk,
   Samples,
   Shell,
@@ -22,8 +22,13 @@ import {
 import "./styles/tokens.css";
 
 async function requireAuth() {
-  if (!localStorage.getItem("Authorization")) return redirect("/login");
-  await api.me();
+  try {
+    await api.me();
+  } catch (error) {
+    if (error instanceof ApiError && error.status === 401)
+      return redirect("/login");
+    throw error;
+  }
   return null;
 }
 
@@ -35,7 +40,7 @@ const router = createBrowserRouter(
       element: <Shell />,
       loader: requireAuth,
       children: [
-        { index: true, loader: () => redirect("/projects") },
+        { index: true, element: <Navigate to="/projects" replace /> },
         { path: "projects", element: <Projects /> },
         {
           path: "projects/:projectId",
@@ -43,11 +48,18 @@ const router = createBrowserRouter(
           children: [
             { index: true, element: <Overview /> },
             { path: "snapshots", element: <Snapshots /> },
+            {
+              path: "snapshots/:snapshotId",
+              lazy: () => import("./features/corpus/routes"),
+            },
             { path: "runs", lazy: () => import("./features/runs/routes") },
             { path: "datasets", element: <Datasets /> },
             { path: "datasets/:datasetId", element: <Samples /> },
             { path: "review", element: <ReviewDesk /> },
-            { path: "releases", element: <Releases /> },
+            {
+              path: "releases",
+              lazy: () => import("./features/releases/routes"),
+            },
           ],
         },
       ],

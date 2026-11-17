@@ -10,6 +10,7 @@ dependencies = [
     "pydantic-settings>=2.6",
     "sqlalchemy[asyncio]>=2.0.36",
     "asyncmy>=0.2.10",
+    "cryptography>=44",
     "alembic>=1.14",
     "redis>=5.2",
     "minio>=7.2",
@@ -42,7 +43,9 @@ packages = ["src/datafactory"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+addopts = "-m 'not integration and not e2e'"
 asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
 markers = [
     "integration: needs the dev-isolated MySQL, Redis and MinIO",
     "e2e: runs against the dev RAGFlow and spends model budget",
@@ -71,7 +74,7 @@ type = "layers"
 layers = [
     "datafactory.app",
     "datafactory.pipeline",
-    "datafactory.corpus | datafactory.engine | datafactory.adapters",
+    "datafactory.corpus | datafactory.engine | datafactory.adapters | datafactory.release",
     "datafactory.store | datafactory.gateway",
     "datafactory.domain",
     "datafactory.core",

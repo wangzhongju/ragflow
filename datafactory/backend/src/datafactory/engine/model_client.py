@@ -113,8 +113,9 @@ class ModelClient:
             await self._settle(record, "billed_unknown", error=str(exc))
             raise BilledUnknown(f"Invocation {record.id}: {exc}") from exc
         except Exception as exc:
-            await self._settle(record, "billed_unknown", error=str(exc))
-            raise BilledUnknown(f"Invocation {record.id}: {exc}") from exc
+            message = str(exc) or type(exc).__name__
+            await self._settle(record, "billed_unknown", error=message)
+            raise BilledUnknown(f"Invocation {record.id}: {message}") from exc
         await self._settle(record, "succeeded", result=result)
         return result
 

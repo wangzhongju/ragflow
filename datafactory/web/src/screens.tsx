@@ -8,13 +8,8 @@ import {
 } from "react-router-dom";
 import { Base64 } from "js-base64";
 import JSEncrypt from "jsencrypt";
-import {
-  Dataset,
-  OverviewCounts,
-  RagflowDataset,
-  api,
-  login,
-} from "./api/client";
+import { useTranslation } from "react-i18next";
+import { ApiError, OverviewCounts, RagflowDataset, api } from "./api/client";
 import { StatusBadge } from "./ui/status-badge";
 import { View, useLoad } from "./ui/view";
 
@@ -43,6 +38,7 @@ export function Shell() {
 
 export function Login() {
   const navigate = useNavigate();
+  const { t } = useTranslation();
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
 
@@ -52,13 +48,17 @@ export function Login() {
     setBusy(true);
     setError("");
     try {
-      await login(
-        String(data.get("email")),
-        encryptPassword(String(data.get("password"))),
-      );
+      await api.login({
+        email: String(data.get("email")),
+        password: encryptPassword(String(data.get("password"))),
+      });
       navigate("/projects");
     } catch (err) {
-      setError((err as Error).message);
+      setError(
+        err instanceof ApiError && err.code === "invalid_credentials"
+          ? t("invalidCredentials")
+          : (err as Error).message,
+      );
     } finally {
       setBusy(false);
     }
@@ -326,7 +326,9 @@ export function Snapshots() {
               {rows.map((row) => (
                 <tr key={row.id}>
                   <td>
-                    {row.name}
+                    <Link to={`/projects/${projectId}/snapshots/${row.id}`}>
+                      {row.name}
+                    </Link>
                     <br />
                     <code>{row.id}</code>
                   </td>
@@ -512,102 +514,6 @@ export function ReviewDesk() {
           </article>
         )}
       </View>
-    </section>
-  );
-}
-
-export function Releases() {
-  const { projectId = "" } = useParams();
-  const [tick, setTick] = useState(0);
-  const releases = useLoad(() => api.releases(projectId), [projectId, tick]);
-  const [datasets, setDatasets] = useState<Dataset[]>([]);
-  const [exportText, setExportText] = useState("");
-  const [error, setError] = useState("");
-
-  useEffect(() => {
-    api
-      .datasets(projectId)
-      .then(setDatasets)
-      .catch(() => setDatasets([]));
-  }, [projectId, tick]);
-
-  async function handleRelease() {
-    setError("");
-    const dataset = datasets[0];
-    if (!dataset) {
-      setError("没有可发布的数据集。");
-      return;
-    }
-    try {
-      await api.release(projectId, dataset.id);
-      setTick((n) => n + 1);
-    } catch (err) {
-      setError((err as Error).message);
-    }
-  }
-
-  async function handleExport(releaseId: string, adapter: string) {
-    setError("");
-    const result = await api.export(projectId, releaseId, adapter);
-    const [name, content] = Object.entries(result.files)[0] ?? ["", ""];
-    setExportText(`${name}\n${content.slice(0, 1200)}`);
-  }
-
-  return (
-    <section className="page">
-      <header className="page-head">
-        <h1>发布</h1>
-        <button className="primary" onClick={handleRelease}>
-          发布最新数据集
-        </button>
-      </header>
-      {error && <p role="alert">{error}</p>}
-      <View
-        state={releases}
-        onRetry={() => setTick((n) => n + 1)}
-        empty={{
-          title: "还没有发布。审核通过样本后即可发布。",
-          action: "发布最新数据集",
-          onAction: handleRelease,
-        }}
-      >
-        {(rows) => (
-          <ul className="plain">
-            {rows.map((row) => (
-              <li key={row.id}>
-                <code>{row.id}</code> · {row.sample_count} 条 ·{" "}
-                <StatusBadge status={row.status} />
-                <ul>
-                  {row.gates.map((gate) => (
-                    <li key={gate.name}>
-                      {gate.passed ? "通过" : "未通过"} · {gate.name}
-                      {gate.detail ? `：${gate.detail}` : ""}
-                    </li>
-                  ))}
-                </ul>
-                {row.status === "released" && (
-                  <div className="row">
-                    {[
-                      "canonical",
-                      "beir",
-                      "sentence_transformers",
-                      "flagembedding",
-                    ].map((adapter) => (
-                      <button
-                        key={adapter}
-                        onClick={() => handleExport(row.id, adapter)}
-                      >
-                        {adapter}
-                      </button>
-                    ))}
-                  </div>
-                )}
-              </li>
-            ))}
-          </ul>
-        )}
-      </View>
-      {exportText && <pre className="export">{exportText}</pre>}
     </section>
   );
 }

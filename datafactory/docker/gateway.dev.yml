@@ -1,0 +1,26 @@
+# Load the current Gateway code without the main server's database initialization.
+# gateway.dev.env is a private copy of the 91 RAGFlow runtime environment.
+services:
+  df-gateway:
+    image: ${DF_RAGFLOW_IMAGE:-ragflow-local:dev-20261030}
+    entrypoint: []
+    command: [python3, -m, hypercorn, api.apps:app, --bind, "0.0.0.0:9392"]
+    working_dir: /ragflow
+    env_file: gateway.dev.env
+    volumes_from:
+      - container:ragflow-app-ragflow-1:ro
+    networks: [ragflow-app_default]
+    restart: unless-stopped
+    healthcheck:
+      test: [CMD, python3, -c, "import httpx; assert httpx.get('http://127.0.0.1:9392/api/v1/gateway/models', trust_env=False).status_code == 403"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+  df-api:
+    depends_on:
+      df-gateway: {condition: service_healthy}
+    environment:
+      DF_GATEWAY_BASE_URL: http://df-gateway:9392/api/v1
+  df-worker:
+    environment:
+      DF_GATEWAY_BASE_URL: http://df-gateway:9392/api/v1

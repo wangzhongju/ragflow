@@ -50,3 +50,18 @@ def test_production_names_are_not_forced_to_contain_dev():
 def test_empty_names_do_not_bypass_isolation(field):
     with pytest.raises(ValidationError):
         Settings.model_validate({field: ""})
+
+
+def test_settings_repr_does_not_expose_connection_credentials():
+    from datafactory.core.settings import GatewaySettings
+
+    settings = Settings(
+        database_url="mysql+asyncmy://user:db-password@host/dev",
+        redis_url="redis://:redis-secret@host",
+        minio_access_key="access-secret",
+        minio_secret_key="minio-secret",
+        gateway_service_key="gateway-secret",
+    )
+    for secret in ("db-password", "redis-secret", "access-secret", "minio-secret", "gateway-secret"):
+        assert secret not in repr(settings)
+    assert "gateway-secret" not in repr(GatewaySettings(gateway_service_key="gateway-secret"))

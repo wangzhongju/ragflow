@@ -73,6 +73,11 @@ const Snapshots: Snapshot[] = [
 ];
 const Prefix = "*/api/factory/v1/projects/p";
 const Handlers = [
+  http.get("*/api/factory/v1/projects", () =>
+    HttpResponse.json([
+      { id: "p", name: "p", description: "", owner_id: "u", role: "owner" },
+    ]),
+  ),
   http.get(`${Prefix}/runs`, () => HttpResponse.json([RunFixture])),
   http.get(`${Prefix}/recipes`, () => HttpResponse.json(Recipes)),
   http.get(`${Prefix}/snapshots`, () => HttpResponse.json(Snapshots)),
@@ -116,6 +121,49 @@ function mount(path = "/projects/p/runs?run=run_1") {
 }
 
 describe("Run workbench", () => {
+  it("saves an owner budget adjustment with its reason", async () => {
+    let body: unknown;
+    Server.use(
+      http.put(`${Prefix}/runs/run_1/budget`, async ({ request }) => {
+        body = await request.json();
+        return HttpResponse.json(RunFixture);
+      }),
+    );
+    mount();
+    fireEvent.click(await screen.findByText("预算与账目管理（所有者）"));
+    fireEvent.change(screen.getByLabelText("Token 上限"), {
+      target: { value: "12000" },
+    });
+    fireEvent.change(screen.getByLabelText("原因与核对依据"), {
+      target: { value: "Approved dev budget" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "保存预算" }));
+    await waitFor(() =>
+      expect(body).toEqual({
+        max_tokens: 12000,
+        max_invocations: 100,
+        reason: "Approved dev budget",
+      }),
+    );
+  });
+  it("hides account changes from an editor", async () => {
+    Server.use(
+      http.get("*/api/factory/v1/projects", () =>
+        HttpResponse.json([
+          {
+            id: "p",
+            name: "p",
+            description: "",
+            owner_id: "u",
+            role: "editor",
+          },
+        ]),
+      ),
+    );
+    mount();
+    await screen.findByText("version_1");
+    expect(screen.queryByText("预算与账目管理（所有者）")).toBeNull();
+  });
   it("shows partial progress, frozen version and resume control", async () => {
     mount();
     expect(await screen.findByText("version_1")).toBeTruthy();

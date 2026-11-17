@@ -3,7 +3,7 @@
 This is the only code that speaks to RAGFlow. It sends the service key and the
 user it acts for, checks the contract version on the first response, and turns
 the gateway's ``{code, data, message}`` envelope into typed records or a
-``GatewayUnavailable`` error.
+``GatewayUnavailable`` error. Rejected browser sessions raise ``Unauthorized``.
 """
 
 import json
@@ -11,7 +11,7 @@ from collections.abc import AsyncIterator, Mapping
 
 import httpx
 
-from datafactory.core.errors import GatewayUnavailable, GatewayVersionMismatch
+from datafactory.core.errors import GatewayUnavailable, GatewayVersionMismatch, Unauthorized
 from datafactory.core.settings import GatewaySettings
 from datafactory.gateway.dto import (
     Chunk,
@@ -59,6 +59,21 @@ class GatewayClient:
                 self._url("/gateway/session"),
                 headers={"Authorization": authorization, _REQUEST: self._request_id},
             )
+        if response.status_code == 401:
+            raise Unauthorized("Your RAGFlow session is invalid or expired. Sign in again.")
+        self._check_version(response)
+        return Session.model_validate(self._data(response))
+
+    async def session_from_password(self, email: str, encrypted_password: str) -> Session:
+        """Verify credentials through the gateway without creating a RAGFlow login."""
+        async with self._http(self._settings.gateway_timeout_s) as http:
+            response = await http.post(
+                self._url("/gateway/session"),
+                headers={_SERVICE_KEY: self._settings.gateway_service_key, _REQUEST: self._request_id},
+                json={"email": email, "password": encrypted_password},
+            )
+        if response.status_code == 401:
+            raise Unauthorized("Invalid RAGFlow credentials.", code="invalid_credentials")
         self._check_version(response)
         return Session.model_validate(self._data(response))
 

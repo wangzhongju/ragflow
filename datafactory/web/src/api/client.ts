@@ -7,6 +7,9 @@ const client = createClient<paths>({
   credentials: "same-origin",
 });
 
+const MePath = "/api/factory/v1/me";
+const SessionPath = "/api/factory/v1/session";
+
 export class ApiError extends Error {
   constructor(
     readonly code: string,
@@ -17,20 +20,18 @@ export class ApiError extends Error {
   }
 }
 
-function token(): string {
-  return localStorage.getItem("Authorization") ?? "";
-}
-
 client.use({
   onRequest({ request }) {
-    request.headers.set("Authorization", token());
     if (request.method === "POST")
       request.headers.set("Idempotency-Key", uuid());
     return request;
   },
-  onResponse({ response }) {
-    if (response.status === 401) {
-      localStorage.removeItem("Authorization");
+  onResponse({ response, schemaPath }) {
+    if (
+      response.status === 401 &&
+      schemaPath !== MePath &&
+      schemaPath !== SessionPath
+    ) {
       window.location.assign("/factory/login");
     }
   },
@@ -53,7 +54,58 @@ async function unwrap<T>(
 
 const projectParams = (project_id: string) => ({ path: { project_id } });
 export const api = {
-  me: () => unwrap(client.GET("/api/factory/v1/me")),
+  adjustBudget: (
+    project_id: string,
+    run_id: string,
+    body: Schema["BudgetIn"],
+  ) =>
+    unwrap(
+      client.PUT("/api/factory/v1/projects/{project_id}/runs/{run_id}/budget", {
+        params: { path: { project_id, run_id } },
+        body,
+      }),
+    ),
+  reconcile: (
+    project_id: string,
+    run_id: string,
+    invocation_id: string,
+    body: Schema["ReconcileIn"],
+  ) =>
+    unwrap(
+      client.POST(
+        "/api/factory/v1/projects/{project_id}/runs/{run_id}/invocations/{invocation_id}:reconcile",
+        { params: { path: { project_id, run_id, invocation_id } }, body },
+      ),
+    ),
+  snapshot: (project_id: string, snapshot_id: string) =>
+    unwrap(
+      client.GET(
+        "/api/factory/v1/projects/{project_id}/snapshots/{snapshot_id}",
+        { params: { path: { project_id, snapshot_id } } },
+      ),
+    ),
+  segments: (project_id: string, snapshot_id: string, after?: string) =>
+    unwrap(
+      client.GET(
+        "/api/factory/v1/projects/{project_id}/snapshots/{snapshot_id}/segments",
+        {
+          params: {
+            path: { project_id, snapshot_id },
+            query: { limit: 100, after },
+          },
+        },
+      ),
+    ),
+  login: (body: Schema["LoginIn"]) =>
+    unwrap(client.POST(SessionPath, { body })),
+  me: () =>
+    unwrap(
+      client.GET(MePath, {
+        headers: {
+          Authorization: localStorage.getItem("Authorization") ?? undefined,
+        },
+      }),
+    ),
   projects: () => unwrap(client.GET("/api/factory/v1/projects")),
   createProject: (name: string) =>
     unwrap(
@@ -177,11 +229,14 @@ export const api = {
         params: projectParams(project_id),
       }),
     ),
-  release: (project_id: string, dataset_id: string) =>
+  release: (project_id: string, dataset_id: string, warning_reason = "") =>
     unwrap(
       client.POST(
         "/api/factory/v1/projects/{project_id}/datasets/{dataset_id}/releases",
-        { params: { path: { project_id, dataset_id } } },
+        {
+          params: { path: { project_id, dataset_id } },
+          body: { warning_reason },
+        },
       ),
     ),
   export: (project_id: string, release_id: string, adapter: string) =>
@@ -191,9 +246,23 @@ export const api = {
         { params: { path: { project_id, release_id }, query: { adapter } } },
       ),
     ),
+  downloadPackage: (project_id: string, release_id: string, adapter: string) =>
+    unwrap(
+      client.GET(
+        "/api/factory/v1/projects/{project_id}/releases/{release_id}/package",
+        {
+          params: { path: { project_id, release_id }, query: { adapter } },
+          parseAs: "blob",
+        },
+      ),
+    ),
 };
 
 type Schema = components["schemas"];
+export type ContentPart = Schema["ContentPart"];
+export function assetUrl(asset: string) {
+  return `/api/factory/v1/assets/${encodeURIComponent(asset)}`;
+}
 export type Me = Schema["Me"];
 export type Project = Schema["ProjectOut"];
 export type Snapshot = Schema["SnapshotOut"];
@@ -232,22 +301,4 @@ export function watchRun(
     source.close();
   });
   return () => source.close();
-}
-
-export async function login(email: string, password: string): Promise<void> {
-  const response = await fetch("/v1/user/login", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ email, password }),
-    credentials: "same-origin",
-  });
-  const authorization = response.headers.get("Authorization");
-  if (!response.ok || !authorization)
-    throw new ApiError(
-      "login_failed",
-      "登录失败，请检查邮箱和密码。",
-      response.status,
-    );
-  localStorage.setItem("Authorization", authorization);
-  await api.me();
 }

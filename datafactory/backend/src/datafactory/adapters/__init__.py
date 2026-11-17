@@ -4,6 +4,14 @@ An adapter reads a frozen release and writes one training format. It never
 changes the release. A text adapter refuses a release that contains image
 positives instead of dropping them, unless the caller explicitly asks for the
 text subset.
+
+Text format baselines checked 2026-11-16:
+BEIR custom-dataset specification (2022-06-29):
+https://github.com/beir-cellar/beir/wiki/Load-your-custom-dataset
+Sentence Transformers current Dataset Format specification:
+https://sbert.net/docs/sentence_transformer/training_overview.html#dataset-format
+FlagEmbedding BGE v1.5 finetuning format:
+https://bge-model.com/tutorial/7_Finetuning/7.1.1.html
 """
 
 import json
@@ -58,34 +66,39 @@ class AdapterError(ValueError):
         super().__init__(f"{len(issues)} samples cannot be exported.")
 
 
-def validate_text(samples: list[ReleaseSample], corpus: ReleaseCorpus, text_only: bool) -> list[ExportIssue]:
-    """Image positives block a text export unless the caller asked for the text subset."""
-    if text_only:
-        return []
+def _text_issues(samples: list[ReleaseSample], corpus: ReleaseCorpus) -> list[ExportIssue]:
+    """Check both sides of every pair before selecting a text subset."""
     issues = []
     for sample in samples:
         if sample.modality != "text":
             issues.append(ExportIssue(sample.query_id, f"Sample {sample.query_id} is {sample.modality}, not text."))
             continue
-        for segment_id in sample.positives:
+        if not sample.positives:
+            issues.append(ExportIssue(sample.query_id, "At least one positive is required."))
+        for segment_id in sample.positives + sample.negatives:
+            if segment_id not in corpus.segments:
+                issues.append(ExportIssue(sample.query_id, f"Segment {segment_id} is missing."))
+                continue
             modality = corpus.modalities.get(segment_id, "text")
             if modality != "text":
-                issues.append(ExportIssue(sample.query_id, f"Positive {segment_id} is {modality}."))
+                issues.append(ExportIssue(sample.query_id, f"Segment {segment_id} is {modality}."))
     return issues
 
 
 def _text_samples(samples: list[ReleaseSample], corpus: ReleaseCorpus, text_only: bool) -> list[ReleaseSample]:
-    issues = validate_text(samples, corpus, text_only)
+    issues = _text_issues(samples, corpus)
     if issues and not text_only:
         raise AdapterError(issues)
     blocked = {issue.sample_id for issue in issues}
-    return [sample for sample in samples if sample.query_id not in blocked and sample.modality == "text"]
+    return sorted(
+        (sample for sample in samples if sample.query_id not in blocked), key=lambda item: (item.split, item.query_id)
+    )
 
 
 def export_canonical(samples: list[ReleaseSample], corpus: ReleaseCorpus) -> ExportResult:
     """The release as JSONL, one file per split. Every modality is kept."""
     files: dict[str, list[str]] = {}
-    for sample in samples:
+    for sample in sorted(samples, key=lambda item: (item.split, item.query_id)):
         files.setdefault(f"samples/{sample.split}.jsonl", []).append(
             json.dumps(
                 {
@@ -134,13 +147,20 @@ def export_sentence_transformers(
     """Triplets with a fixed number of negative columns, one file per split."""
     kept = _text_samples(samples, corpus, text_only)
     width = max((len(sample.negatives) for sample in kept), default=0)
+    invalid = [
+        ExportIssue(sample.query_id, "Sentence Transformers requires the same nonzero negative-column count per row.")
+        for sample in kept
+        if not sample.negatives or len(sample.negatives) != width
+    ]
+    if invalid:
+        raise AdapterError(invalid)
     files: dict[str, list[str]] = {}
     for sample in kept:
-        row = {"anchor": sample.query, "positive": corpus.segments.get(sample.positives[0], "")}
-        for index in range(width):
-            segment_id = sample.negatives[index] if index < len(sample.negatives) else ""
-            row[f"negative_{index + 1}"] = corpus.segments.get(segment_id, "") if segment_id else ""
-        files.setdefault(f"{sample.split}.jsonl", []).append(json.dumps(row, ensure_ascii=False))
+        for positive in sample.positives:
+            row = {"anchor": sample.query, "positive": corpus.segments[positive]}
+            for index, segment_id in enumerate(sample.negatives):
+                row[f"negative_{index + 1}"] = corpus.segments[segment_id]
+            files.setdefault(f"{sample.split}.jsonl", []).append(json.dumps(row, ensure_ascii=False))
     return ExportResult({name: "\n".join(lines) + "\n" for name, lines in sorted(files.items())})
 
 

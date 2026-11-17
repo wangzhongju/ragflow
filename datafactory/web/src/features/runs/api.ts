@@ -3,6 +3,11 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api, watchRun, type Run } from "../../api/client";
 
 export const RunKeys = {
+  projects: () => ["projects"] as const,
+  allMetrics: (project: string, run?: string) =>
+    run
+      ? (["run-metrics", project, run] as const)
+      : (["run-metrics", project] as const),
   list: (project: string) => ["runs", project] as const,
   metrics: (project: string, run: string, after?: string) =>
     ["run-metrics", project, run, after] as const,
@@ -41,7 +46,7 @@ export function useRunMetrics(project: string, run: string, after?: string) {
           current?.map((item) => (item.id === record.id ? record : item)),
         );
         void client.invalidateQueries({
-          queryKey: ["run-metrics", project, run],
+          queryKey: RunKeys.allMetrics(project, run),
         });
       },
       setConnected,
@@ -70,7 +75,7 @@ export function useRunControl(project: string) {
     onSuccess: (run) => {
       void client.invalidateQueries({ queryKey: RunKeys.list(project) });
       void client.invalidateQueries({
-        queryKey: ["run-metrics", project, run.id],
+        queryKey: RunKeys.allMetrics(project, run.id),
       });
     },
   });

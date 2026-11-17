@@ -1,0 +1,19 @@
+{
+  "canonical": {
+    "samples/test.jsonl": "{\"query_id\": \"q2\", \"query\": \"How is sourdough started?\", \"positives\": [\"seg_2\"], \"negatives\": [\"seg_1\"], \"modality\": \"text\"}\n",
+    "samples/train.jsonl": "{\"query_id\": \"q1\", \"query\": \"What notice does revocation require?\", \"positives\": [\"seg_1\"], \"negatives\": [\"seg_2\"], \"modality\": \"text\"}\n"
+  },
+  "beir": {
+    "corpus.jsonl": "{\"_id\": \"seg_1\", \"title\": \"\", \"text\": \"Notice is required thirty days before revocation.\"}\n{\"_id\": \"seg_2\", \"title\": \"\", \"text\": \"Sourdough needs wild yeast.\"}\n",
+    "queries.jsonl": "{\"_id\": \"q2\", \"text\": \"How is sourdough started?\"}\n",
+    "qrels/test.tsv": "query-id\tcorpus-id\tscore\nq2\tseg_2\t1\n"
+  },
+  "sentence_transformers": {
+    "test.jsonl": "{\"anchor\": \"How is sourdough started?\", \"positive\": \"Sourdough needs wild yeast.\", \"negative_1\": \"Notice is required thirty days before revocation.\"}\n",
+    "train.jsonl": "{\"anchor\": \"What notice does revocation require?\", \"positive\": \"Notice is required thirty days before revocation.\", \"negative_1\": \"Sourdough needs wild yeast.\"}\n"
+  },
+  "flagembedding": {
+    "test.jsonl": "{\"query\": \"How is sourdough started?\", \"pos\": [\"Sourdough needs wild yeast.\"], \"neg\": [\"Notice is required thirty days before revocation.\"], \"pos_scores\": [0.8], \"neg_scores\": [0.1]}\n",
+    "train.jsonl": "{\"query\": \"What notice does revocation require?\", \"pos\": [\"Notice is required thirty days before revocation.\"], \"neg\": [\"Sourdough needs wild yeast.\"], \"pos_scores\": [0.9], \"neg_scores\": [0.2]}\n"
+  }
+}
