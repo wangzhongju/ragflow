@@ -891,6 +891,7 @@ class ExportAdapter(Protocol):
   侧栏 220px，可折叠为 56px 图标栏；审核数为待办徽标；底部常驻项目预算条
 ```
 
+- 登录页沿用 RAGFlow 的品牌图标、青绿色线条背景、居中表单卡片与金属渐变主按钮，默认使用深色外观。页面标题标识 DataFactory，提供中英文、窄屏布局、密码显隐及登录状态反馈。
 - 登录守卫优先使用有效的 DataFactory `df_session`。首次使用时，同源页面可由 `/me` 验证 RAGFlow `Authorization` 后建立平台会话。登录表单提交到 DataFactory `POST /api/factory/v1/session`，平台经 Gateway 校验账号并签发有期限的 HttpOnly Cookie。两个平台各自管理会话。
 - RAGFlow 主导航增加一个"数据工厂"入口（外链到 `/factory`），这是 RAGFlow 前端的唯一改动。
 

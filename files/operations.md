@@ -1,7 +1,7 @@
 # 部署与操作手册
 
 - 用途：归纳可复用的部署、接口、存储及排障操作。
-- 核对基准：主体部署手册为 2026-11-12 本地核查；DataFactory 章节于 2026-11-16 补充本地隔离验证与部署准备，均未连接 91/92 或执行部署。
+- 核对基准：主体部署手册为 2026-11-12 本地核查；DataFactory 于 2026-11-16 完成 91 开发部署及指定真实知识库小批验收，未连接 92 主机。当前 Gateway 启动方式见 [真实验收部署](#datafactory-real-gateway)。
 - 适用范围：本工程的 Linux / Docker Compose v2 Python 应用部署。Go 服务的实现与构建入口需另按当前代码核对，不把下文的 Python 接口契约套用于 Go。
 - 关联文档：[问题与修复记录](issue.md)、[更新摘要](update.md)。
 
@@ -1800,5 +1800,153 @@ Storybook：`npm run storybook`，状态徽标的 completed/queued/paused/failed
 2. 暂停/继续/取消调用同一运行资源的 `:pause`、`:resume`、`:cancel`。暂停后保留检查点；继续按版本及种子恢复，已提交列批次直接加载。取消不可恢复，已发送模型请求仍可结算。
 3. 详情展示检查点完成数、列耗时、调用数、已结算/预留 Token；调用记录按游标翻页。运行时 SSE 更新，断流时 5 秒刷新。暂停后的迟到结算可点击刷新查看。
 4. Worker 中断后重启即可扫描过期的 5 分钟租约；sent 请求未得到确定结果时转为 billed_unknown 并暂停，不能自动重复调用。API 返回 409 billed_unknown 时按 [排查记录](issue.md#datafactory-runs-20261116) 核账，不直接改数据库。
-5. 预算超限按配方 `budget.on_exceed` 暂停或失败。当前没有运行预算调整、三级预算或人工账目结算接口；不要把“继续”当成增加预算，也不要把新建运行当成无需再次计费的恢复。
+5. 预算超限按配方 `budget.on_exceed` 暂停或失败。所有者可在运行页调整运行预算或人工核账，必须填写依据；项目/租户预算尚未实施。不要把“继续”当成增加预算，也不要把新建运行当成无需再次计费的恢复。
 6. 当前 Worker 使用数据库队列，尚无 Streams/AIMD；完整语料和全局处理仍在内存，不以小批次检查点等同于 50 万种子的容量验收。
+
+
+<a id="datafactory-deploy-91"></a>
+## DataFactory：91 独立开发部署与发布包验证
+
+工作目录：`/home/cdky/workspace/github/ragflow/datafactory/docker`。Compose 项目为 `ragflow-datafactory`，外部网络 `ragflow-app_default` 只用于通过 HTTP 访问 91 的 RAGFlow Gateway。前端入口为 `http://192.168.88.91:9391/factory/`，独立端口需重新使用 RAGFlow 账号登录；现有 8088 端口的 localStorage 不会跨端口共享。API 仅绑定主机 127.0.0.1:9390。没有修改 RAGFlow 的 8088 Nginx 或重启 RAGFlow 容器。
+
+### 构建与启动
+
+1. 在本地 `datafactory/web` 执行 `npm ci && npm run gen:api && npm run build`。同步 datafactory 源码与 `web/dist` 到 91；排除 .venv、node_modules、缓存、测试生成物、私有 .env。删除已从代码移除的明确文件，不使用整仓清理。
+2. 91 根据 `.env.example` 建立权限 600 的 .env，设置随机数据库/MinIO/session 密钥及 91 已配置的 Gateway 服务密钥。Gateway 容器配置名为 `DATAFACTORY_SERVICE_KEY`，平台配置名为 `DF_GATEWAY_SERVICE_KEY`。不要打印密钥或提交 .env。
+3. 本次实际镜像引用如下（写入 .env）；更换数据库镜像前先确认数据格式和备份，不复用其他服务的存储卷：
+
+```dotenv
+DF_MYSQL_IMAGE=mysql:8.0.39
+DF_REDIS_IMAGE=redis:7.2
+DF_MINIO_IMAGE=quay.io/minio/minio:RELEASE.2023-12-20T01-00-02Z
+```
+
+```bash
+cd /home/cdky/workspace/github/ragflow/datafactory/docker
+docker compose config --quiet
+docker compose build df-api
+docker compose up -d --wait df-api df-worker df-web
+docker compose ps
+curl --fail http://127.0.0.1:9390/healthz
+```
+
+API 启动先运行 Alembic，当前 head 为 0008_release_manifest。更新代码时先停止 Worker/API，同步后再 up --wait。内部存储：`df-mysql/datafactory_dev_91`、`df-minio/datafactory-dev-192-168-88-91`、`df-redis` 与前缀 `df:dev:192_168_88_91:`；卷名为 `ragflow-datafactory_mysql-dev`、`redis-dev`、`minio-dev`（后两者同样带项目名前缀）。不对 92 或 RAGFlow 共享存储执行这些命令。
+
+首次 MySQL 初始化报 cryptography/TEXT 默认值/部分建表错误时，按 [完整排查步骤](issue.md#datafactory-deploy-20261116) 修复，不使用 down -v、drop database 或更改认证插件。
+
+### 运行验证
+
+测试工具只装到开发验证容器；重建容器后需重新安装。真实服务测试显式携带 integration 标记及开关，另检查数据库主机/库名、Redis 和 MinIO 均为上述专用服务。普通 pytest 默认排除 integration/e2e。
+
+```bash
+docker compose up -d --wait df-api df-worker df-web
+docker compose exec -T df-api python -m pip install pytest pytest-asyncio aiosqlite
+docker compose exec -T df-api python -m pytest tests/unit -q --tb=short
+docker compose exec -T -e DF_TEST_DEPLOYED=1 df-api python -m pytest tests/integration -m integration -q --tb=short
+```
+
+集成测试在独立开发库中保留名为 `Integration smoke (synthetic)` 的小型合成项目，用随机 integration-* 身份隔离。不会创建 RAGFlow 账号，不调用模型；不能将其结果当成真实用户知识库验收。重跑不依赖上一轮数据。需要真实端到端测试时使用实际 RAGFlow 账号及获准的开发知识库，先预览并限制运行预算。
+
+### 资产、账目与发布操作
+
+- 资产请求为 `GET /api/factory/v1/assets/sha256:<hex>`，需登录 Cookie 和相关项目权限。Range 单范围返回 206；非法范围 416；通过 ETag 进行条件读取。数据库无权访问时不会因已知 ETag 返回 304。
+- 暂停运行后，所有者在“预算与账目管理”填写上限及原因；未知调用先对照提供方账单填写实际 Token 和依据，再确认核账。核账只结算账目，不生成缺失响应，不重发请求；之后的列失败策略可能丢行或使运行失败。
+- 发布页选择具体数据集，校验并冻结；阻断门禁不能通过原因豁免。warning 失败需填写“警告确认原因”。选择已发布记录、导出格式、预览前三条，再下载 ZIP。
+- ZIP 解包后运行 `sha256sum -c SHA256SUMS` 校验所有已列文件（包括 manifest.json）；清单内还记录各数据/报告/资产文件的大小与 SHA-256。`data/` 为目标格式文件，`release/` 保留完整规范数据，`assets/<digest>` 为冻结媒体字节。媒体框架专用相对路径转换尚未完成，不能把规范资产包当成 M2 训练格式验收。
+- 停用只停止 df-web、df-api、df-worker，保留存储卷。回退 0008 前先备份专用库、停止 API/Worker、downgrade 至 0007，再恢复对应源码和 dist，并移除备份不存在的 0008 迁移及新增 release 包，防止启动时再次升级。
+
+<a id="datafactory-real-gateway"></a>
+## DataFactory 真实验收后的 91 Gateway 部署与恢复
+
+2026-11-16 当前部署为 **7 个服务**：原 API、Worker、Web、MySQL、Redis、MinIO，加 `df-gateway`。用户入口仍为 <http://192.168.88.91:9391/factory/>。使用文档见 [USER_GUIDE.md](../datafactory/USER_GUIDE.md)，真实资源及校验值见 [VALIDATION_REPORT.md](../datafactory/VALIDATION_REPORT.md)。
+
+### 为什么使用开发 Gateway 服务
+
+主 RAGFlow 的 `api/ragflow_server.py` 启动会运行数据库初始化、迁移和初始化数据操作。当前开发使用共享 RAGFlow 存储，本轮不能为加载 Gateway 代码而触发这些操作。`gateway.dev.yml` 复用主容器的镜像、环境和只读挂载，通过 `python3 -m hypercorn api.apps:app --bind 0.0.0.0:9392` 导入同一份 Gateway 代码，不运行主 server/entrypoint，不启动另一套解析 Worker。
+
+9392 只在 `ragflow-app_default` Docker 网络内可达。API 和 Worker 使用 `http://df-gateway:9392/api/v1`。登录页面通过 DataFactory 的 `POST /api/factory/v1/session` 建立平台会话，由 API 内部访问 Gateway 的账号验证端点。
+
+该服务依赖 91 主 RAGFlow 容器的挂载布局、有效配置与模型服务，不是独立知识库副本。知识库/文档/切片/图片访问仍只读；用户登录和真实模型调用按 RAGFlow 自身路径处理认证及用量。
+
+### 首次准备（仅 91）
+
+1. 确认主容器名称 `ragflow-app-ragflow-1`、镜像 `ragflow-local:dev-20261030` 以及上述外部网络存在。镜像不同时在 DataFactory `.env` 设置 `DF_RAGFLOW_IMAGE`，不要盲目拉取旧标签。
+2. 保留现有 DataFactory `.env` 中的数据库/对象存储/会话密钥，增加 `COMPOSE_FILE=compose.yml:gateway.dev.yml`。Linux 的 Compose 文件分隔符为冒号。
+3. 在 91 将主容器运行环境复制到私有文件 `datafactory/docker/gateway.dev.env`，权限 600；不得提交、打印或上传该文件。以下脚本不输出密钥：
+
+```bash
+cd /home/cdky/workspace/github/ragflow/datafactory/docker
+python3 - <<'PY'
+import json, os, pathlib, subprocess
+source = json.loads(subprocess.check_output(['docker', 'inspect', 'ragflow-app-ragflow-1']))[0]
+values = source['Config']['Env']
+# 当前现场环境经比对可直接读取；出现这些字符时先处理 dotenv 引号规则。
+assert all('\n' not in value and '$' not in value for value in values)
+target = pathlib.Path('gateway.dev.env')
+fd = os.open(target, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+with os.fdopen(fd, 'w') as output:
+    output.write('\n'.join(values) + '\n')
+os.chmod(target, 0o600)
+PY
+docker compose config --services
+```
+
+最后一条应只输出服务名称，包括 df-gateway。不要运行不带过滤的 `docker compose config` 或输出 `docker inspect .Config.Env`，它们会泄露环境密钥。现有主应用环境更新后，需更新此私有副本并重新创建 df-gateway。
+
+### 启动、更新与健康检查
+
+```bash
+cd /home/cdky/workspace/github/ragflow/datafactory/docker
+docker compose -f compose.yml -f gateway.dev.yml up -d df-gateway df-api df-worker df-web
+docker compose -f compose.yml -f gateway.dev.yml ps
+docker inspect ragflow-datafactory-df-gateway-1 --format '{{.State.Health.Status}}'
+curl -fsS http://127.0.0.1:9390/healthz
+```
+
+首次 Gateway 导入可能超过 40 秒。等 Gateway 与 API healthy 后再测试；必要时使用 `docker compose ... up -d --wait --wait-timeout 180`。Gateway 健康探针访问无服务密钥的 models 接口，**预期 403**，用于确认路由已加载；真正可用性还须从平台登录后读取模型列表验证。
+
+- 仅修改 Gateway Python：同步文件后 `docker compose restart df-gateway`，等待健康；不重启主 RAGFlow。
+- 修改 API/Worker Python：同步后分别重启 df-api/df-worker，等待 API 健康；已有 paused/unknown 记录保留。
+- 更新前端时在 `datafactory/web` 执行 `npm ci` 和 `npm run build`。先备份现有 `dist/`，再将生成目录通过 `rsync -a --chmod=D755,F644 --delete-delay --delay-updates` 同步到现有挂载目录。仅更新静态文件时无需重启。检查 `/factory/` 及页面引用的 JS 和 CSS 均返回 200。页面返回 403 且 nginx 报 `Permission denied` 时，先核对 `dist` 目录和文件权限。
+- **替换 bind 挂载的 nginx 配置文件后必须重建 df-web**：`docker compose up -d --force-recreate df-web`，再 `docker compose exec -T df-web nginx -t`。单纯 reload 可能仍读取旧 inode。
+- API 容器 IP 改变后刷新 nginx 上游解析：`docker compose exec -T df-web nginx -s reload`。不能以 nginx 页面 200 代替 API 健康。
+- 部署包明确排除 `.env`、`gateway.dev.env`、浏览器会话、凭据、node_modules、.venv 和缓存。两份环境文件均列入 `datafactory/docker/.gitignore`。
+
+### 验证与故障定位
+
+1. 用真实 RAGFlow 账号登录 9391，检查 login 和 `/api/factory/v1/me` 均成功。SSH 账号和普通 API Key 都不能代替此登录。
+2. 读取知识库、文档和模型目录；检查知识库 `tenant_embd_id`、vector_dim、模型所属租户和能力。
+3. 先建立小快照、运行 1 行预览，再制作 1–2 行正式数据。配方、审核和导出步骤见使用手册；不要拿页面“新建检索配方”的原文复制示例当合格训练配方。
+4. unknown billing 立即保留暂停；查上游用量后再核账。不可清空预留或把缺少 usage 的成功调用当作零成本。
+5. 发布 ZIP 解压后 `sha256sum -c SHA256SUMS`，并检查 manifest 文件数/大小。对比测试前后源文档状态。
+
+针对本轮回归的命令：
+
+```bash
+# 本地根目录或独立开发容器；不导入根 conftest 的真实服务初始化。
+python -m pytest --noconftest test/unit_test/api/test_gateway_contract.py -q
+# datafactory/backend
+PYTHONPATH=src python -m pytest tests/unit -q
+# 91 DataFactory docker 目录；测试依赖只安装到独立 DF API 容器
+docker compose exec -T df-api python -m pip install pytest pytest-asyncio aiosqlite
+docker compose exec -T -e DF_TEST_DEPLOYED=1 df-api python -m pytest tests/integration -m integration -q
+```
+
+DataFactory API 镜像本身不包含 pytest；容器重建后需要重新准备测试依赖。不要向 df-gateway 只读复用的 RAGFlow `.venv` 写入依赖。Windows 探针访问内网时若继承代理而收到空体 502，先核查代理，使用明确绕过代理的诊断客户端；不要在未确认根因时修改业务错误处理。
+
+<a id="datafactory-login-diagnosis"></a>
+### 登录与会话诊断
+
+1. 打开 Chrome 开发者工具的网络面板，保留请求日志后复现。`POST /api/factory/v1/session` 应返回 200 并签发 HttpOnly 的 `df_session`。随后 `/me` 和项目列表均应返回 200。账号错误返回 401 / `invalid_credentials`。
+2. 没有平台 Cookie 时，下面的无效令牌探针应返回 401 / `unauthorized`。502 时检查 `df-api` 错误和 `df-gateway` 的 `GET` 或 `POST /api/v1/gateway/session` 状态，区分令牌拒绝、账号校验和服务故障。
+
+   ```bash
+   curl --noproxy '*' -si -H 'Authorization: invalid-test-session' \
+     http://192.168.88.91:9391/api/factory/v1/me
+   ```
+
+3. 在独立 Chrome 会话注入无效令牌访问 `/factory/`，确认显示登录页。登录后将测试令牌替换为另一无效值并刷新，确认平台会话、项目列表及知识库仍可访问。账号认证与独立会话故障定位见 [会话互斥排查](issue.md#datafactory-independent-session-20261117)。
+
+### 停止与回退
+
+停止平台用 `docker compose stop df-web df-api df-worker df-gateway`，保留独立存储和证据。此次 Gateway/登录修复不需要数据库 downgrade。文件备份和逐步回退限制见 [问题记录](issue.md#datafactory-real-20261116)。不得通过 `down -v`、重置账目或删掉失败记录来恢复。当前未核实调用见验收报告，应保持 paused 等待 owner 核账。

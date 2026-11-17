@@ -1,0 +1,199 @@
+.sign-in {
+  position: relative;
+  isolation: isolate;
+  min-height: 100svh;
+  padding: clamp(
+      calc(6 * var(--sign-in-unit)),
+      7vh,
+      calc(15 * var(--sign-in-unit))
+    )
+    clamp(calc(4 * var(--sign-in-unit)), 4vw, calc(12 * var(--sign-in-unit)))
+    calc(12 * var(--sign-in-unit));
+  color: var(--sign-in-ink);
+  background:
+    radial-gradient(
+      ellipse 16% 20% at 10% -4%,
+      color-mix(in srgb, var(--sign-in-glow) 14%, transparent),
+      transparent
+    ),
+    radial-gradient(
+      ellipse 16% 20% at 90% -4%,
+      color-mix(in srgb, var(--sign-in-glow) 14%, transparent),
+      transparent
+    ),
+    radial-gradient(
+      ellipse 70% 45% at 50% 110%,
+      color-mix(in srgb, var(--sign-in-glow) 10%, transparent),
+      transparent
+    ),
+    var(--sign-in-background);
+  font-family: var(--sign-in-font);
+}
+
+.sign-in-traces {
+  position: absolute;
+  z-index: -1;
+  inset: 0 0 auto;
+  width: 100%;
+  height: min(100vw, 720px);
+  fill: none;
+  stroke: var(--sign-in-trace);
+  opacity: 0.16;
+  pointer-events: none;
+}
+
+.sign-in-traces path {
+  vector-effect: non-scaling-stroke;
+}
+
+.sign-in-brand {
+  display: flex;
+  align-items: center;
+  gap: calc(5 * var(--sign-in-unit));
+  font-size: 20px;
+}
+
+.sign-in h1 {
+  margin: calc(5 * var(--sign-in-unit)) 0 0;
+  font-size: clamp(24px, 4vw, 36px);
+  font-weight: 500;
+  line-height: 1.25;
+  text-align: center;
+}
+
+.sign-in-panel {
+  width: 100%;
+  max-width: var(--sign-in-card-width);
+  margin: clamp(
+      calc(12 * var(--sign-in-unit)),
+      11vh,
+      calc(26 * var(--sign-in-unit))
+    )
+    auto 0;
+  text-align: center;
+}
+
+.sign-in-panel h2 {
+  margin: 0;
+  font-size: 20px;
+}
+
+#sign-in-hint {
+  margin: var(--sign-in-unit) 0 calc(6 * var(--sign-in-unit));
+  color: var(--sign-in-muted);
+}
+
+.sign-in-card {
+  display: grid;
+  gap: calc(7 * var(--sign-in-unit));
+  padding: clamp(
+    calc(6 * var(--sign-in-unit)),
+    4vw,
+    calc(10 * var(--sign-in-unit))
+  );
+  background: var(--sign-in-card);
+  border: 1px solid var(--sign-in-border);
+  border-radius: var(--sign-in-card-radius);
+  box-shadow: var(--sign-in-shadow);
+  text-align: start;
+}
+
+.sign-in-field {
+  display: grid;
+  gap: calc(2 * var(--sign-in-unit));
+  min-width: 0;
+}
+
+.sign-in-field label {
+  color: var(--sign-in-muted);
+  font-weight: 500;
+}
+
+.sign-in-field label span,
+.sign-in-error {
+  color: var(--sign-in-error);
+}
+
+.sign-in-field input {
+  width: 100%;
+  min-height: calc(9 * var(--sign-in-unit));
+  padding: var(--sign-in-unit) calc(3 * var(--sign-in-unit));
+  background: var(--sign-in-input);
+  border-color: var(--sign-in-input-border);
+  border-radius: var(--sign-in-control-radius);
+}
+
+.sign-in-field input::placeholder {
+  color: var(--sign-in-muted);
+}
+
+.sign-in-password {
+  position: relative;
+}
+
+.sign-in-password input {
+  padding-inline-end: calc(11 * var(--sign-in-unit));
+}
+
+.sign-in-password input::-ms-reveal {
+  display: none;
+}
+
+.sign-in-password button {
+  position: absolute;
+  inset-block: 0;
+  inset-inline-end: 0;
+  display: grid;
+  place-items: center;
+  width: calc(10 * var(--sign-in-unit));
+  padding: 0;
+  border: 0;
+  border-radius: var(--sign-in-control-radius);
+  background: transparent;
+  color: var(--sign-in-muted);
+  outline-offset: calc(-1 * var(--sign-in-unit));
+}
+
+.sign-in-password button:hover {
+  color: var(--sign-in-ink);
+}
+
+.sign-in :focus-visible {
+  outline-color: var(--sign-in-focus);
+}
+
+.sign-in-error {
+  margin: calc(-3 * var(--sign-in-unit)) 0 0;
+}
+
+.sign-in-submit {
+  min-height: calc(10 * var(--sign-in-unit));
+  margin-top: calc(2 * var(--sign-in-unit));
+  border: 1px solid transparent;
+  border-bottom: 2px solid var(--sign-in-trace);
+  border-radius: var(--sign-in-control-radius);
+  color: var(--sign-in-background);
+  background: linear-gradient(
+    104deg,
+    var(--sign-in-ink) 30%,
+    var(--sign-in-metallic) 50%,
+    var(--sign-in-ink) 70%
+  );
+  font-weight: 500;
+}
+
+.sign-in-submit:hover:enabled {
+  border-bottom-color: var(--sign-in-edge-hover);
+}
+
+@media (max-width: 600px) {
+  .sign-in-panel {
+    margin-top: calc(12 * var(--sign-in-unit));
+  }
+
+  .sign-in-field input,
+  .sign-in-submit {
+    min-height: calc(11 * var(--sign-in-unit));
+    font-size: 16px;
+  }
+}

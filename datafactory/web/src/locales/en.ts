@@ -1,6 +1,18 @@
 import type { Zh } from "./zh";
 
 export const En: Record<keyof typeof Zh, string> = {
+  loginProductTitle: "Training data production platform",
+  loginTitle: "Sign in to DataFactory",
+  loginHint: "Use your RAGFlow account to sign in.",
+  loginEmail: "Email",
+  loginEmailPlaceholder: "Enter your email address",
+  loginPassword: "Password",
+  loginPasswordPlaceholder: "Enter your password",
+  loginShowPassword: "Show password",
+  loginHidePassword: "Hide password",
+  loginSubmit: "Sign in",
+  loginSubmitting: "Signing in…",
+  loginUnavailable: "Sign-in is temporarily unavailable. Try again shortly.",
   invalidCredentials: "Sign-in failed. Check your email and password.",
   cross_split_leakage: "Cross-split leakage",
   example_counts: "Positive and negative counts",

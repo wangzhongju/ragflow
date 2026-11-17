@@ -1,26 +1,8 @@
-import { FormEvent, useEffect, useState } from "react";
-import {
-  Link,
-  NavLink,
-  Outlet,
-  useNavigate,
-  useParams,
-} from "react-router-dom";
-import { Base64 } from "js-base64";
-import JSEncrypt from "jsencrypt";
-import { useTranslation } from "react-i18next";
-import { ApiError, OverviewCounts, RagflowDataset, api } from "./api/client";
+import { useEffect, useState } from "react";
+import { Link, NavLink, Outlet, useParams } from "react-router-dom";
+import { OverviewCounts, RagflowDataset, api } from "./api/client";
 import { StatusBadge } from "./ui/status-badge";
 import { View, useLoad } from "./ui/view";
-
-const RAGFLOW_PUBLIC_KEY =
-  "-----BEGIN PUBLIC KEY-----MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEArq9XTUSeYr2+N1h3Afl/z8Dse/2yD0ZGrKwx+EEEcdsBLca9Ynmx3nIB5obmLlSfmskLpBo0UACBmB5rEjBp2Q2f3AG3Hjd4B+gNCG6BDaawuDlgANIhGnaTLrIqWrrcm4EMzJOnAOI1fgzJRsOOUEfaS318Eq9OVO3apEyCCt0lOQK6PuksduOjVxtltDav+guVAA068NrPYmRNabVKRNLJpL8w4D44sfth5RvZ3q9t+6RTArpEtc5sh5ChzvqPOzKGMXW83C95TxmXqpbK6olN4RevSfVjEAgCydH6HN6OhtOQEcnrU97r9H0iZOWwbw3pVrZiUkuRD1R56Wzs2wIDAQAB-----END PUBLIC KEY-----";
-
-function encryptPassword(password: string): string {
-  const encryptor = new JSEncrypt();
-  encryptor.setPublicKey(RAGFLOW_PUBLIC_KEY);
-  return encryptor.encrypt(Base64.encode(password)) || "";
-}
 
 export function Shell() {
   return (
@@ -33,59 +15,6 @@ export function Shell() {
         <Outlet />
       </div>
     </div>
-  );
-}
-
-export function Login() {
-  const navigate = useNavigate();
-  const { t } = useTranslation();
-  const [error, setError] = useState("");
-  const [busy, setBusy] = useState(false);
-
-  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    const data = new FormData(event.currentTarget);
-    setBusy(true);
-    setError("");
-    try {
-      await api.login({
-        email: String(data.get("email")),
-        password: encryptPassword(String(data.get("password"))),
-      });
-      navigate("/projects");
-    } catch (err) {
-      setError(
-        err instanceof ApiError && err.code === "invalid_credentials"
-          ? t("invalidCredentials")
-          : (err as Error).message,
-      );
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  return (
-    <form className="login" onSubmit={handleSubmit}>
-      <h1>登录 DataFactory</h1>
-      <p className="muted">使用 RAGFlow 账号登录。平台不保存密码。</p>
-      <label>
-        邮箱
-        <input name="email" type="email" required autoComplete="username" />
-      </label>
-      <label>
-        密码
-        <input
-          name="password"
-          type="password"
-          required
-          autoComplete="current-password"
-        />
-      </label>
-      {error && <p role="alert">{error}</p>}
-      <button className="primary" type="submit" disabled={busy}>
-        {busy ? "登录中…" : "登录"}
-      </button>
-    </form>
   );
 }
 

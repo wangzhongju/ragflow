@@ -5,11 +5,16 @@
 - **用途：**按日期保存故障现象、证据、修复、验证与回退；稳定操作见 [操作手册](operations.md)。
 - **记录口径：**日期章节中的“本次/本轮”、主机状态、测试通过数量、模型响应和私有备份均指该日原记录。本次只对照本地代码，不重新证明历史现场结果。
 - **环境边界：**本地与 91 为开发范围；92 为生产及共享存储。历史生产操作仅供审计，不是本次执行授权。即使请求发往 91，也必须先确认数据库、Redis、索引和对象存储已隔离，再进行写入测试。
-- **最新记录：**2026-11-16，DataFactory 本地代码核查、修复及隔离测试；未连接 91/92、未调用真实模型或部署。2026-11-12 的文档核对结论及更早的 ID、端口、模型、镜像标签使用前须重新核实。
+- **最新记录**为 2026-11-17，在 91 更新 DataFactory 登录页样式。
 - **与更新日志的对应：**[update.md](update.md) 只存整体摘要；其中缺少 11 月 3—4 日的六个专题摘要，本次不扩大修改范围补写。对于仅存摘要的旧条目，在相应日期标记证据缺口，不补造排查或验收结果。
 
 ## 目录
 
+- [2026-11-17 DataFactory 登录页视觉对齐](#datafactory-login-style-20261117)
+- [2026-11-17 DataFactory 与 RAGFlow 会话互斥](#datafactory-independent-session-20261117)
+- [2026-11-17 DataFactory Chrome 登录报错](#datafactory-chrome-login-20261117)
+- [2026-11-16 DataFactory 真实知识库验收](#datafactory-real-20261116)
+- [2026-11-16 DataFactory 数据治理与 91 部署](#datafactory-deploy-20261116)
 - [2026-11-16 DataFactory 可恢复运行](#datafactory-runs-20261116)
 - [2026-11-16 DataFactory 基础纠偏](#datafactory-foundation-20261116)
 - [2026-11-04](#date-2026-11-04)
@@ -21,6 +26,150 @@
 - [2026-10-26](#date-2026-10-26)
 - [2026-10-24](#date-2026-10-24)
 - [2026-10-23](#date-2026-10-23)
+
+<a id="datafactory-login-style-20261117"></a>
+## 2026-11-17 DataFactory 登录页视觉对齐
+
+1. 用独立 Chrome 会话打开 91 的 RAGFlow `:8088/login-next` 和 DataFactory `:9391/factory/login`，结合 `web/src/pages/login-next` 核对样式。RAGFlow 页面采用左上角品牌区、青绿轮廓背景、居中的 540px 卡片与金属渐变主按钮。原 DataFactory 使用窄卡片和工作台配色。
+2. DataFactory 的登录页由 `datafactory/web/src/app/login.tsx` 和 `login.css` 管理，颜色与控件尺寸在 `styles/tokens.css` 按登录页作用域定义。品牌标志以本地 SVG 随 DataFactory 构建。登录提交仍由 `api.login` 访问平台会话接口。初次构建若出现 SVG 的 `TS2307`，检查前端 `tsconfig.json` 是否包含 `vite/client` 类型声明。
+3. 在 `datafactory/web` 执行 `npm run lint`、`npm run format:check`、`npm run test`、`npm run build` 和 `PLAYWRIGHT_CHANNEL=chrome npm run e2e`。在 Storybook 检查登录页亮色与暗色。在 Chrome 检查桌面和 320px 窄屏、Tab 焦点、密码显隐、提交中以及错误后重试。
+4. 在 91 将新构建同步至现有 `datafactory/web/dist/`，命令见[前端部署](operations.md#datafactory-real-gateway)。原源码、三份记录、设计和使用手册及静态文件备份在 `/tmp/df-before-login-style91-20261117-JjOOjD.tar.gz`。从无会话浏览器访问 `/factory/`，检查跳转到登录页，检查页面引用的 JS 和 CSS 都返回 200。复测错误密码与正确密码，成功后应进入项目列表。
+5. 如需回退，在 91 将备份解包到独立临时目录。用相同的 rsync 参数将备份中的 `datafactory/web/dist/` 同步回挂载目录，恢复备份内修改的源码与文档，删除本次新增的 `src/app/login.tsx`、`login.css`、`login.stories.tsx` 和 `ragflow-mark.svg`。刷新登录页复查入口、JS、CSS 和登录。此步骤使用同一静态挂载，无需重启服务。
+
+本次前端构建、格式、lint、12 项单测和 2 项 Chrome 回归通过。Storybook 的亮暗页面均通过视觉检查，输入框边界对比度均大于 3:1，标签和占位符大于 4.5:1。Chrome 157 在 91 实测错误密码返回 401 并显示提示，正确密码登录后建立 `df_session` 并进入项目列表。前端静态入口、JS、CSS 和开发 API 健康检查返回 200。部署只更新 DataFactory 前端和相关文档，无需重启服务或更改 92。
+
+<a id="datafactory-independent-session-20261117"></a>
+## 2026-11-17 DataFactory 与 RAGFlow 会话互斥
+
+### 原因与修复
+
+1. 原 DataFactory 登录表单通过 9391 Nginx 调用 RAGFlow `/api/v1/auth/login`。该接口每次成功都会更新用户的 `access_token`。RAGFlow 验证 JWT 解出的令牌能否匹配数据库当前 `access_token`，旧令牌因此失效。
+2. 旧版 DataFactory `/me` 优先验证请求中的 RAGFlow 令牌。直接登录 RAGFlow 更新令牌后，DataFactory 即使已有有效的 `df_session`，也会被这次检查送回登录页。此前的 [401 状态修复](#datafactory-chrome-login-20261117) 只恢复了重新登录的入口。
+3. 现在 DataFactory 登录表单调用 `POST /api/factory/v1/session`。API 使用服务密钥访问 Gateway 的 `POST /api/v1/gateway/session`。后者复用 RAGFlow 解密和密码校验，验证有效账号并返回身份。DataFactory 只签发 `df_session`，RAGFlow 的访问令牌及登录时间由原有 RAGFlow 登录接口管理。
+4. `/me` 优先读取有效的平台 Cookie。尚无 Cookie 时可复用同源 RAGFlow 令牌。前端只有 `/me` 读取同源 `Authorization`，登录表单与全局 401 处理均保留该值。9391 Nginx 和 Vite 已移除直连 `/api/v1/auth/login` 的代理。
+
+### 部署与复查
+
+1. 先确认 91 开发平台没有正在执行或排队的任务。备份本次改动的源码、Nginx 配置和前端 `dist/` 到 `/tmp/df-before-separate-session91-20261117.tar.gz`。
+2. 同步代码，按顺序重启 `df-gateway` 与 `df-api`。Gateway healthy 后，在 `df-api` 内向 `df-gateway:9392/api/v1/gateway/session` 发送无服务密钥的 POST，请求应返回 403。API 启动后等待 `/healthz` 返回 200。
+3. 生成并部署 OpenAPI 类型与 `dist/`。按运维说明同步静态目录，执行 `docker compose up -d --no-deps --force-recreate df-web` 使 Nginx 挂载新配置。检查 `nginx -t`、入口、入口引用的 JS 均成功。通过 9391 访问 `/api/v1/auth/login` 或 `/api/v1/gateway/session` 应返回 404。
+4. 使用独立 Chrome 会话验证。错误密码提交应返回 401 / `invalid_credentials` 且不发会话 Cookie。真实账号成功时检查 `/session`、`/me`、`/projects`，确认浏览器只创建 `df_session`。模拟 RAGFlow 令牌换发后刷新页面，复查项目列表和知识库。操作见 [登录与会话诊断](operations.md#datafactory-login-diagnosis)。
+5. 如需回退，先把备份解包到独立目录，再同步备份中的源码、Nginx 配置和 `dist/`。按 Gateway、API、Web 顺序重启或重建后复查健康。备份版本会重新出现同一账号令牌互斥。平台会话使用已有签名和 Cookie 结构，部署无需数据库迁移。
+
+### 验证结果
+
+- 本地与 91 各通过 41 项 DataFactory 定向测试和 23 项 Gateway 契约测试。前端 12 项单测、2 项 Chrome 回归、lint 和构建通过。
+- 91 上 `df-gateway` 与 `df-api` 健康。Gateway 的密码验证缺服务密钥时返回 403。9391 的旧 RAGFlow 登录代理和 Gateway 路径返回 404。RAGFlow 8088 登录通道接口返回 200。
+- Chrome 157 实测错误密码返回 401。使用授权账号登录 DataFactory 后，平台签发自己的 HttpOnly 会话 Cookie，项目列表返回 200。浏览器中用于模拟 RAGFlow 登录的 Cookie 和令牌在登录前后相同。通过 91 的 RAGFlow 用户服务只读核对，实际账号的访问令牌、登录时间及更新时间前后一致。
+- 在同一个测试浏览器中模拟 RAGFlow 换发令牌，刷新后 DataFactory 项目页和指定知识库目录仍可访问。使用替换的测试令牌验证这一方向，避免为验证而覆盖该账号现有的 RAGFlow 登录令牌。
+
+<a id="datafactory-chrome-login-20261117"></a>
+## 2026-11-17 DataFactory Chrome 登录报错
+
+### 复现与定位
+
+1. 查看 91 的 `df-web` 日志。14:11–14:13（北京时间）有登录及 `/api/factory/v1/me` 返回 200，随后多次 `/me` 返回 502。
+2. 在独立 Chrome 会话打开 `/factory/login`，在开发者工具控制台执行 `localStorage.setItem('Authorization', 'invalid-test-session')`，访问 `/factory/`。修复前 `/me` 返回 502 / `gateway_unavailable`，React Router 显示 `Unexpected Application Error!`，失效值仍留在浏览器。
+3. 从 `df-api` 向 `http://df-gateway:9392/api/v1/gateway/session` 发送同一测试值，确认 Gateway 返回 HTTP 401、业务码 401。真实账号在全新会话里可以登录。RAGFlow 每次登录都会轮换访问令牌，令牌失效后，DataFactory 原先把 Gateway 的 401 走到了通用 502 映射。
+
+### 修复、部署与回退
+
+1. `GatewayClient.session_from_token` 将 Gateway 的 401 映射为 DataFactory 401。其他错误仍走现有的服务错误处理。
+2. 前端收到 401 后按请求携带的令牌清理本地值。`/me` 的 401 由登录守卫跳转或由登录表单显示。平台入口先完成会话校验，再进入项目页，避免守卫和首页跳转同时执行。
+3. 用 `/tmp/df-before-chrome-login91-20261117.tar.gz` 备份 91 的变更前源码和 `dist`。同步变更，执行 DataFactory API 回归，再重启 `df-api` 并等待 `/healthz` 成功。同步构建输出到现有 `datafactory/web/dist`。
+4. 初次同步时，备份使用的 `umask 077` 也影响了部署包解压，`rsync -a` 将 700/600 权限带入 `dist`，Nginx 读取入口出现短暂 403。用 `rsync -a --chmod=D755,F644 --delete-delay --delay-updates` 重新同步后，入口和 JS 均恢复 200。备份权限应限制在备份命令的子 Shell。每次部署分别检查目录 755、文件 644、入口和入口实际引用的 JS 均返回 200。
+5. 回退时将备份解包到独立目录，恢复其中的四个源码文件，再按上述 `rsync` 参数将备份的 `dist/` 同步到现有目录并重启 `df-api`。如需同时回退测试源码，删除本次新增的 `datafactory/web/src/app/__tests__/auth.e2e.ts`。备份版本会将失效令牌转成 502。
+
+### 验证
+
+- 本地和 91 的 API/Gateway 定向回归各 24 项通过。Gateway 401 和 503 分别映射为平台 401 和 502，两种失败都未签发 Cookie。前端 12 项单测、1 项 Chrome 回归、lint、格式和构建通过。Chrome 回归验证失效令牌只触发一次会话校验，清理该值并显示登录表单。
+- 在实际部署页面使用 Chrome 157 测试，带失效令牌访问入口成功回到登录页。使用授权账号登录，RAGFlow 登录、`/me` 和项目列表均返回 200，浏览器收到了 HttpOnly 会话 Cookie。清除测试窗口中保存的令牌后，单靠平台 Cookie 刷新并读取项目与指定知识库目录成功。
+- 部署范围为 91 开发环境。容器启动时间确认本次只重启 `df-api`。复测步骤见 [运维操作](operations.md#datafactory-login-diagnosis)。
+
+<a id="datafactory-real-20261116"></a>
+## 2026-11-16：DataFactory 真实知识库验收及操作文档
+
+### 现场与复现
+
+使用用户授权的 RAGFlow 账号，在 91 的 9391 页面登录，选择 `数据制作多模态验收_20261104`。源库有 8 文档/70 切片，目标平台用独立开发 MySQL/Redis/MinIO。真实账号、模型凭据和会话均不写入仓库。项目/运行/发布 ID 及 ZIP 校验值见 [验收报告](../datafactory/VALIDATION_REPORT.md)。
+
+逐一独立核实后修复的实际阻断：
+
+| 现象 | 实际归因 | 修复与保护 |
+| --- | --- | --- |
+| 页面登录失败，后端 404 | DataFactory 和 nginx 仍指向 `/v1/user/login`；当前 `user_api.py` 注册的是 `/api/v1/auth/login` | 删除旧代理入口，客户端和开发指导使用当前路径；回归验证 Authorization → `/me` 交换 |
+| 模型列表 502 | `TenantModel.tenant_id/llm_name/llm_factory/max_tokens` 已不存在 | 使用 Provider 所属租户、Instance 状态和 Model 的 model_name/extra；调用前检查所属关系及模型/实例 active |
+| 知识库 tenant_embd_id 为 null | 当前 embd_id 本身存储模型 ID，目录未解析为可调用引用 | 复用当前模型解析服务，返回解析后的 ID；不写 RAGFlow 配置 |
+| 快照报 foreign or duplicate chunk | scan 默认投影没有 kb_id，normalize_chunk 得到空串 | 所有投影强制包含 doc_id/kb_id；测试替身也按真实字段投影，避免伪通过 |
+| `imagetemps-*` 图片 403 | 按桶名当知识库 ID 鉴权，与当前真实存储布局不符 | 先查询用户可访问知识库中的实际 img_id 引用，再读对象；未知引用和另一用户都不能读取 |
+| 模型调用成功但预览 0 样本 | ES 客户端返回 ObjectApiResponse，`isinstance(res, dict)` 使得分读取跳过；候选为空，过滤器正确丢弃无负例行 | 按存储 get_scores 接口读取；同时修复 Infinity `_score` 在命名元组中的改名问题；覆盖响应对象和列读取 |
+| 超时运行错误只含 Invocation ID | `str(httpx.ReadTimeout())` 可为空 | 后续未知异常至少记录异常类名；测试空/非空消息均不重发、预留保持 |
+
+### 部署过程与容易误判的环节
+
+1. 前端构建后备份 `/tmp/df-before-auth91.tar.gz`（原 dist 与 nginx），替换构建和配置。一次 `nginx -s reload` 后仍 404：tar 替换配置 inode，但容器单文件 bind 仍指向原 inode。**重新创建 df-web** 后端点生效；不是密码错误。
+2. 使用真实浏览器重新登录，确认 RAGFlow login 与 `/me` 200，再读取知识库目录，避免仅凭页面 200 判断成功。
+3. 本机 httpx 默认代理曾返回空体 502；开发探针显式 `trust_env=False` 后可达。此为探针环境问题，没有更改产品代码来掩盖。
+4. Gateway 源码先备份到 `/tmp/df-before-gateway91.tar.gz`，再同步修复。检查发现主应用 `run_server()` 会调用 `init_web_db/init_web_data`，不能为加载 Gateway 而触发共享存储初始化。
+5. 新增 `gateway.dev.yml`：复用 91 RAGFlow 镜像、环境和只读挂载，以 Hypercorn 导入 `api.apps:app`，不调用主 server/entrypoint；没有主应用 Worker、数据初始化或主机端口。df-api/df-worker 指向 df-gateway:9392。`.env` 设置 `COMPOSE_FILE=compose.yml:gateway.dev.yml`，避免日常重启漏掉覆盖配置。完整步骤见 [运维](operations.md#datafactory-real-gateway)。
+6. Gateway 启动导入较慢，一次 40 秒健康等待超时；稍后确认 healthy 后才开始实际业务测试。不能把 `restart` 返回成功或短等待超时分别等同于健康/永久故障。
+7. API 容器重建后原临时 pytest 依赖消失；只在 DataFactory 开发容器重新安装测试依赖。Gateway 只读复用 RAGFlow `.venv`，未向该环境安装测试包；Gateway 契约测试放到独立 DF API Python 3.13 容器执行。
+
+### 正常与异常路径的验证
+
+- 完整快照纳入 70 切片，44 个唯一图片、8,353,666 字节，全量验证 SHA-256。Range 206、ETag 304、匿名 401；亮/暗语料截图确认图片实际加载。
+- 按源文档 ID 另建 2 条纯文本切片的快照。第一次预览确实执行了 4 次真实模型调用，但因召回缺陷输出 0；修复后新预览 4 次调用、1 个合格样本。没有修改结果数据库来填入分数或负例。
+- 两行正式运行在本地生成模型 judge 阶段超时，调用 `inv_01M7HF25S32DQ9HK6SETZ8C182` 为 billed_unknown，运行 paused；实际 resume 请求 409。没有虚构实际 Token、核账或自动重发。
+- 另用视频描述作为首个种子、不同的已配置生成模型开展独立正常路径测试：4 次调用，1 个合格正式样本，judge=10，1 正例/1 负例。经过来源文本核对后，在页面审核通过、创建发布，五项门禁通过。
+- 页面实际下载 canonical、BEIR、Sentence Transformers、FlagEmbedding ZIP；每个包的 manifest 文件大小/哈希、SHA256SUMS 和重复下载字节一致性通过。BEIR 2 条语料/1 条 test 查询；小批验收刻意设 test=1，不代表训练集划分验收。
+- 源文档 ID、内容哈希、切片/Token 数、状态、进度、更新时间、解析器在测试前后相同。未知账目及成功调用未返回 usage 的预留仍如实保留。
+- 后端 unit 156 passed；Gateway 契约 19 passed（本地和 91 Python 3.13）；91 真实存储 integration 3 passed；前端 12 passed、类型/lint/构建通过；真实浏览器无 JS 异常。多次自动化定位失败属于脚本匹配了含图标的文字或 select 标签，调整定位后全流程通过，不是业务接口失败。
+
+### 复发时的诊断与修复顺序
+
+1. 在 91 检查 Compose 的 7 个服务及健康，确认 df-api/worker Gateway 地址，检查入口与 `/me`，不打印环境密钥。
+2. 登录后分别请求知识库、文档、模型接口。502 时按 message 区分目录模型关系、切片身份、资产权限和传输错误，先对照当前所属代码；不得通过放开权限跳过校验。
+3. 创建最小来源快照；若失败查看原失败记录，修复后新建，不能原地覆盖 frozen 内容。资产故障以实际切片 img_id 引用验证权限，不能直接开放整个 imagetemps 桶。
+4. 使用手册示例配方，1 行预览；核对每列检查点行数、调用状态、候选/教师分数和过滤结果。0 样本先定位哪一列丢行，不改门禁凑数。必要时只读检查独立 MinIO 中 run checkpoint Parquet 的 `row` JSON，禁止连源存储改数据。
+5. 有 billed_unknown 时停止自动重试。根据 Invocation ID、行键、列、模型和时间查上游日志；实际用量可核实后由 owner 填原因核账。核账不恢复丢失响应，按列错误策略决定后续处理。无法核实时保留暂停和预留。
+6. 通过真实页面完成审核、发布、导出，再检查 ZIP；最后比较源文档元数据。完整可复用步骤见 [USER_GUIDE.md](../datafactory/USER_GUIDE.md)。
+
+### 回退
+
+本轮无数据库迁移。Gateway 出现回归时停止 df-gateway，恢复备份内 Gateway 源文件，再以相同 compose 覆盖重建该服务并等待 healthy；不要重启主 RAGFlow 触发初始化，也不要切回明知不可用的模型/资产路径继续制作。前端回退使用 `/tmp/df-before-auth91.tar.gz` 恢复 dist/nginx 后重建 df-web；该备份登录端点存在本次已修复的 404，只适合故障隔离，不能当成可用验收版本。保留平台独立数据库、对象和未知账目；不执行 down -v，不删除失败快照或已发布证据。
+
+<a id="datafactory-deploy-20261116"></a>
+## 2026-11-16：DataFactory 数据治理、发布包与 91 部署
+
+### 核实的问题及修复路径
+
+1. `split_rows → check_gates` 原先仅按局部键划分、检查共享正例，遗漏传递关联。现在把文档家族、共享正例和归一化词集合 Jaccard ≥ 0.8 的查询合并为连通分量；门禁重新计算关联，不依赖客户端提供的分组。测试覆盖传递关系、重排和人为跨 split。
+2. `SnapshotRepository.save_build → assets/{asset_id}` 缺少可鉴权的资产归属。0006 增加 snapshot_asset，分页回填现有切片引用；下载必须关联当前用户可读的 ready/stale 快照，核对字节长度和 SHA-256 后处理 ETag/Range。未授权请求在处理条件请求前拒绝；非法范围 416，跨项目资产 404。HTML/SVG 使用附件与 sandbox 响应头。
+3. `ModelClient → run budget/Invocation → accounts` 缺少安全恢复入口。0007 增加 audit；所有者可在停止/排队状态调整预算，但不能低于已耗用及预留；billed_unknown 需停止运行、提供实际 Token 与核账依据，原调用标记 reconciled，续跑不会重发。锁定顺序统一为 Run → Invocation，账目与审计同事务；真实 MySQL 并发预留测试验证单次额度只发出一次调用。
+4. `release → export → package` 原先没有不可变血缘和交付包。0008 增加 manifest，冻结配方版本/hash、文档来源、调用指纹、样本 hash、门禁和分布；失败 warning 需填写原因，blocker 不能豁免。包内 data/ 为目标格式，release/ 为完整规范数据，assets/ 为哈希命名字节，另含 report.md、manifest.json 和 SHA256SUMS。ZIP 固定条目时间并排序，重复导出字节一致，后续审核不会改写发布。无冻结清单的记录须重新发布才能下载包。
+5. 文本适配器原校验只看正例、显式文本子集也未排除含图片段的文本样本；Sentence Transformers 只保留首个正例，并以空串补负例。现校验正负两侧，文本子集按整条样本筛选；每个正例各导出一行，负例列数量不一致明确拒绝；同 split 稳定排序。固定黄金文件为 `backend/tests/fixtures/text_exports.json`，格式依据官方文档链接记录在适配器模块。
+6. 语料详情和发布页使用生成类型与 Query；表格 HTML 经 DOMPurify 白名单净化，图片懒加载且保留比例。发布页显式选择数据集和发布，支持门禁、冻结清单、前三条预览和 ZIP。移除 screens 中重复发布实现。登录守卫允许有效 HttpOnly Cookie 会话，不再仅凭 localStorage 是否存在决定登录状态。
+
+### 部署失败的诊断与可重复修复
+
+部署目录 `/home/cdky/workspace/github/ragflow/datafactory/docker`，仅在 91 操作。先用 `docker compose ps`、`docker compose logs --tail=100 df-api` 区分以下问题：
+
+- 拉取 Docker Hub 超时：查询 `docker image ls`，将实际可用镜像写入私有 .env 的 DF_MYSQL_IMAGE/DF_REDIS_IMAGE/DF_MINIO_IMAGE。本次使用 mysql:8.0.39、redis:7.2、quay.io/minio/minio:RELEASE.2023-12-20T01-00-02Z，保持独立卷，不复用服务器原有数据库或桶。
+- 出现 `cryptography package is required`：MySQL caching_sha2_password 需要该运行依赖。已加入 pyproject.toml，并让 Dockerfile 从这一清单安装依赖；执行 `docker compose build df-api` 后重新创建 API/Worker。不得通过降低数据库认证方式处理。
+- 出现 `TEXT column ... can't have a default value`：0003 的 review.reason、0004 的 run.error 默认值缺少 MySQL 表达式括号，已修正为 `DEFAULT ('')`。本次 91 首次执行时 0003 未完成，不是对已完成迁移重写表结构。
+- 随后若出现 `Table recipe already exists`：MySQL DDL 已部分提交。先停止 df-api/df-worker，查询 alembic_version，必须是 0002_snapshots；逐一查询 recipe、recipe_version、run、dataset、sample 的 COUNT(*)。**仅当五表均为空**，按 sample、dataset、run、recipe_version、recipe 顺序删除这次失败创建的表，再 `docker compose up -d --wait df-api df-worker df-web`。本次五表实际均为 0，未删除已有业务数据。若版本或计数不符，保留现场，不能照搬删除。不要 drop database 或 down -v。
+- `docker compose restart` 只保证进程启动，不保证服务监听。第一次扩展集成检查紧跟 restart，HTTP 连接被拒绝；改为 `docker compose up -d --wait ...` 等健康后验证，3 项通过。失败 traceback 曾展开 Settings，已将数据库/Redis URL、对象存储/Gateway 密钥从 repr 隐藏，并增加回归测试；不要打印 .env、完整 compose config 或配置对象。
+
+### 验证证据与边界
+
+- 镜像 Python 3.13，MySQL 8.0.39 实际迁移到 0008_release_manifest，表名/列与 ORM 一致。API 与 Worker 均运行，前端位于 `http://192.168.88.91:9391/factory/`；API 主机端口仅监听 127.0.0.1:9390。
+- 91 unit 全套、独立存储 integration 及本地 Ruff/Pyright/import-linter 结果见实施记录。integration 覆盖 MySQL 并发预留、Redis 专用前缀读写、MinIO 资产/hash/Range、项目幂等、真实 Worker/Parquet、门禁阻断及有效合成样本 ZIP 的每文件 hash。
+- 前端 11 项 Vitest/MSW、类型/lint/格式、生产构建、Storybook 构建和 1 项 Playwright 桩通过；实际部署浏览器验证登录页、Cookie 会话、语料详情亮暗主题、运行页、发布页、导出预览及实际 ZIP 下载，未发生 JS 异常。截图留在本地验证缓存，不提交生成物。
+- 集成数据明确标记为 synthetic，由测试自行建立签名开发会话；用于验证服务与接口，不代表 RAGFlow 登录、模型质量、图片查询或真实知识库全链路验收。实际 RAGFlow 账号/知识库尚待提供。未访问 92，未调用模型。
+
+### 回退
+
+部署阶段在 91 `/tmp/df-before-release91.tar.gz` 保存了 0008 前的 backend/src、alembic、web/dist。回退前先停止 API/Worker 并备份专用库，在当前代码下执行 `alembic downgrade 0007_run_audit`（会删除 manifest），再恢复对应源码和 dist、重新启动。不要恢复或覆盖私有 .env，不恢复无关文件，不动生产。若只是停用开发入口，停止 df-web/API/Worker 即可，保留三个存储卷。其他迁移回退先审查 downgrade 和数据影响。
 
 <a id="datafactory-runs-20261116"></a>
 ## 2026-11-16：DataFactory 可恢复运行与模型调用台账

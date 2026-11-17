@@ -278,23 +278,6 @@ th {
   outline: none;
 }
 
-.login {
-  max-width: 360px;
-  margin: 12vh auto;
-  display: grid;
-  gap: 12px;
-  background: var(--surface-raised);
-  padding: 32px;
-  border-radius: 10px;
-  border: 1px solid var(--border-subtle);
-}
-.login label {
-  display: grid;
-  gap: 4px;
-  font-size: 13px;
-  color: var(--muted);
-}
-
 .export {
   background: #1c1917;
   color: #f5f5f4;
@@ -350,4 +333,43 @@ th {
   --status-success: #7cdb9d;
   --status-danger: #ff9c9c;
   --status-info: #a1c8ff;
+}
+
+.sign-in {
+  color-scheme: dark;
+  --sign-in-background: #161618;
+  --sign-in-card: #202025;
+  --sign-in-input: #2a2a2f;
+  --sign-in-ink: #f6f6f7;
+  --sign-in-muted: #b2b5b7;
+  --sign-in-border: #37373c;
+  --sign-in-input-border: #76767e;
+  --sign-in-focus: #00beb4;
+  --sign-in-error: #ff9c9c;
+  --sign-in-metallic: #fafafa;
+  --sign-in-trace: #00beb4;
+  --sign-in-glow: #80fff8;
+  --sign-in-edge-hover: #02bcdd;
+  --sign-in-shadow: 0 16px 28px rgba(0, 0, 0, 0.16);
+  --sign-in-font:
+    Inter, system-ui, "PingFang SC", "Microsoft YaHei", sans-serif;
+  --sign-in-unit: 4px;
+  --sign-in-card-width: 540px;
+  --sign-in-card-radius: 10px;
+  --sign-in-control-radius: 6px;
+}
+
+:root[data-theme="light"] .sign-in {
+  color-scheme: light;
+  --sign-in-background: #ffffff;
+  --sign-in-card: #ffffff;
+  --sign-in-input: #f3f4f4;
+  --sign-in-ink: #161618;
+  --sign-in-muted: #585c60;
+  --sign-in-border: #e0e1e2;
+  --sign-in-input-border: #86868d;
+  --sign-in-focus: #007d77;
+  --sign-in-error: #b91c1c;
+  --sign-in-metallic: #46464a;
+  --sign-in-shadow: 0 16px 28px rgba(22, 22, 24, 0.11);
 }

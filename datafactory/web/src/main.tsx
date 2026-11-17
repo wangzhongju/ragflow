@@ -1,4 +1,5 @@
 import { api, ApiError } from "./api/client";
+import { Login } from "./app/login";
 import { Providers } from "./app/providers";
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
@@ -10,7 +11,6 @@ import {
 } from "react-router-dom";
 import {
   Datasets,
-  Login,
   Overview,
   ProjectLayout,
   Projects,

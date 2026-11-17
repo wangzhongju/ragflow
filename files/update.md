@@ -2,7 +2,31 @@
 
 按日期记录整体原因与更新描述。详细排查、修复与验证见 [issue.md](issue.md)，技术操作见 [operations.md](operations.md)。
 
+## 2026-11-17
+
+### DataFactory 登录页与 RAGFlow 视觉对齐
+
+DataFactory 登录页采用与 RAGFlow 一致的品牌图标、深色青绿背景、居中卡片和金属渐变按钮。新增密码显隐，适配窄屏和中英文。登录仍通过 DataFactory 接口建立独立会话。[核对、部署与回退](issue.md#datafactory-login-style-20261117)
+
+### DataFactory 与 RAGFlow 登录会话独立
+
+两套前端的密码登录原先会替换同一个 RAGFlow 令牌。DataFactory 现通过 Gateway 校验账号并创建平台会话，RAGFlow 可以重新登录，已有平台会话继续有效。[排查与验证](issue.md#datafactory-independent-session-20261117)
+
+### DataFactory 浏览器会话恢复
+
+DataFactory 将 RAGFlow 拒绝失效令牌的 401 转成 502，导致已有浏览器会话进入错误页。会话检查现在返回 401，前端清理失效令牌并回到登录页。[排查与验证](issue.md#datafactory-chrome-login-20261117)
+
 ## 2026-11-16
+
+### DataFactory 真实知识库部署验收与使用手册
+
+- **原因**：实际登录、模型目录、切片和图片读取及召回得分未被此前合成验收覆盖，真实链路存在阻断；平台缺少按已实现功能编写的操作手册。
+- **更新**：修正登录契约、Gateway 模型所属关系/状态校验、Embedding 引用、切片身份、图片引用授权及检索响应读取，补齐回归；在 91 以不执行主应用初始化的独立 Gateway 加载修复。完成指定知识库快照与资产校验、真实模型小批制作、页面审核发布和四种 ZIP 下载；保留真实超时的未知账目。新增完整使用手册、可复用文本配方与验收报告，明确 M2 等未完成范围。[验收与修复](issue.md#datafactory-real-20261116) · [使用手册](../datafactory/USER_GUIDE.md)
+
+### DataFactory 数据治理、发布包与 91 开发部署
+
+- **原因**：暂停运行缺预算调整和未知账目核账入口，资产下载缺权限控制，数据划分存在关联泄漏，发布缺少冻结血缘和可校验交付包；此前验证未覆盖实际 MySQL 及部署环境。
+- **更新**：补齐所有者预算/核账审计、资产鉴权与 Range、连通分量划分、语料详情、发布清单/报告/ZIP 校验包及发布工作台，修复文本导出遗漏负例模态和正例的问题；新增文本黄金样例。修复 MySQL 启动依赖与迁移语法后，在 91 部署独立存储、API、Worker、前端，并完成真实服务集成与浏览器验证。M0–M2 仍有未完成项，未触碰 92。[排查及验收](issue.md#datafactory-deploy-20261116)
 
 ### DataFactory 可恢复运行与模型调用台账
 
