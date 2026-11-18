@@ -2,6 +2,12 @@
 
 按日期记录整体原因与更新描述。详细排查、修复与验证见 [issue.md](issue.md)，技术操作见 [operations.md](operations.md)。
 
+## 2026-11-17
+
+### DataFactory 技术架构与开发计划
+
+基于新版产品设计和 26 页原型，明确上游语料处理与平台制作边界、RAGFlow 多账户知识库及模型授权、独立部署和分期验收。建立核心引擎、后端和前端开发指南。 [技术架构](../datafactory/product-proposal/TECHNICAL_ARCHITECTURE.md) · [开发计划](../datafactory/product-proposal/DEVELOPMENT_PLAN.md)
+
 ## 2026-11-02
 
 ### 1. 官方资源缓存与开发/生产镜像拆分
